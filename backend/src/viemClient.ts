@@ -68,15 +68,36 @@ export function loadDeployments(): Deployments {
 
 export const deployments = loadDeployments();
 
-/** Underlying asset decimals for vUSD (USDC = 6). Cached after first read. */
-let assetDecimalsCache: number | undefined;
+/**
+ * Decimals for a vault and its underlying asset. OZ ERC-4626 derives share
+ * decimals from the asset (plus _decimalsOffset(), 0 here), so vUSD shares are
+ * 6-decimal like USDC - NOT 18. Formatting either side with the wrong scale
+ * silently misreports every balance, so both are read from chain.
+ */
+interface VaultDecimals {
+  share: number;
+  asset: number;
+}
 
-async function getAssetDecimals(vault: Address): Promise<number> {
-  if (assetDecimalsCache !== undefined) return assetDecimalsCache;
-  const asset = await publicClient.readContract({ address: vault, abi: erc4626Abi, functionName: 'asset' });
-  const decimals = await publicClient.readContract({ address: asset, abi: erc20Abi, functionName: 'decimals' });
-  assetDecimalsCache = Number(decimals);
-  return assetDecimalsCache;
+const decimalsCache = new Map<string, VaultDecimals>();
+
+async function getDecimals(vault: Address): Promise<VaultDecimals> {
+  const cached = decimalsCache.get(vault.toLowerCase());
+  if (cached) return cached;
+
+  const [asset, shareDecimals] = await Promise.all([
+    publicClient.readContract({ address: vault, abi: erc4626Abi, functionName: 'asset' }),
+    publicClient.readContract({ address: vault, abi: erc4626Abi, functionName: 'decimals' }),
+  ]);
+  const assetDecimals = await publicClient.readContract({
+    address: asset,
+    abi: erc20Abi,
+    functionName: 'decimals',
+  });
+
+  const resolved = { share: Number(shareDecimals), asset: Number(assetDecimals) };
+  decimalsCache.set(vault.toLowerCase(), resolved);
+  return resolved;
 }
 
 export async function getVaultsOverview() {
@@ -94,7 +115,11 @@ export async function getVaultsOverview() {
   try {
     const vUsdAddress = d.vUSD as Address;
     const earnAddress = d.EarnVault as Address;
-    const assetDecimals = await getAssetDecimals(vUsdAddress);
+    const [vUsdDecimals, earnDecimals] = await Promise.all([
+      getDecimals(vUsdAddress),
+      getDecimals(earnAddress),
+    ]);
+    const assetDecimals = vUsdDecimals.asset;
 
     // Layer 1 TVL is the ERC-4626 vault's underlying holdings.
     const [layer1Assets, layer1Shares, layer2Assets, rewardRate] = await Promise.all([
@@ -104,8 +129,8 @@ export async function getVaultsOverview() {
       publicClient.readContract({ address: earnAddress, abi: earnVaultAbi, functionName: 'rewardRate' }),
     ]);
 
-    // Share price: assets returned for 1 whole vUSD share.
-    const oneShare = 10n ** 18n;
+    // Share price: assets returned for 1 whole vUSD share, at the vault's own scale.
+    const oneShare = 10n ** BigInt(vUsdDecimals.share);
     const sharePrice = await publicClient.readContract({
       address: vUsdAddress,
       abi: erc4626Abi,
@@ -145,7 +170,7 @@ export async function getVaultsOverview() {
           stakedToken: 'vUSD',
           shareToken: 's1MOL',
           rewardToken: '1MOL',
-          stakedShares: formatUnits(layer2Assets, 18),
+          stakedShares: formatUnits(layer2Assets, vUsdDecimals.share),
           tvlUSD: formatUnits(layer2UnderlyingValue, assetDecimals),
           rewardRatePerSecond: formatUnits(rewardRate, 18),
           address: d.EarnVault,
@@ -154,7 +179,7 @@ export async function getVaultsOverview() {
       vUsd: {
         address: vUsdAddress,
         totalAssets: formatUnits(layer1Assets, assetDecimals),
-        totalShares: formatUnits(layer1Shares, 18),
+        totalShares: formatUnits(layer1Shares, vUsdDecimals.share),
         sharePrice: formatUnits(sharePrice, assetDecimals),
       },
     };
@@ -177,7 +202,11 @@ export async function getUserOverview(userAddress: Address) {
   try {
     const vUsdAddress = d.vUSD as Address;
     const earnAddress = d.EarnVault as Address;
-    const assetDecimals = await getAssetDecimals(vUsdAddress);
+    const [vUsdDecimals, earnDecimals] = await Promise.all([
+      getDecimals(vUsdAddress),
+      getDecimals(earnAddress),
+    ]);
+    const assetDecimals = vUsdDecimals.asset;
 
     const [vUsdShares, earnShares, pendingReward] = await Promise.all([
       publicClient.readContract({ address: vUsdAddress, abi: erc4626Abi, functionName: 'balanceOf', args: [userAddress] }),
@@ -210,9 +239,9 @@ export async function getUserOverview(userAddress: Address) {
     return {
       userAddress,
       chainConnected: true,
-      vUsdBalance: formatUnits(vUsdShares, 18),
+      vUsdBalance: formatUnits(vUsdShares, vUsdDecimals.share),
       vUsdValueUSD: formatUnits(vUsdValue, assetDecimals),
-      earnStakedBalance: formatUnits(earnShares, 18),
+      earnStakedBalance: formatUnits(earnShares, earnDecimals.share),
       earnStakedValueUSD: formatUnits(earnValue, assetDecimals),
       pendingReward: formatUnits(pendingReward, 18),
     };

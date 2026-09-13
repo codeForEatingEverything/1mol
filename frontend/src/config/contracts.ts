@@ -127,9 +127,19 @@ export const aquaManagerAbi = [
   { type: 'function', name: 'globalCapBps', inputs: [], outputs: [{ type: 'uint16' }], stateMutability: 'view' },
 ] as const;
 
-/** Risk tiers, matching LoyaltyEngine.Tier. */
-export const TIERS = [
-  { bit: 1, label: 'Stable', detail: 'Pegged pairs', weight: '1.0x' },
-  { bit: 2, label: 'Major', detail: 'ETH / BTC quoted', weight: '1.8x' },
-  { bit: 4, label: 'Long-tail', detail: 'Higher variance', weight: '3.5x' },
+/**
+ * Pools a balance may be delegated to, matching LoyaltyEngine.Tier.
+ *
+ * Aqua lets one balance back several pools at once without splitting it, which
+ * is what makes it capital efficient. It also means a single balance is exposed
+ * to every pool it backs, so ruin risk compounds with each additional pool
+ * while return does not. The weight is what that exposure is paid for.
+ *
+ * Which vault a depositor is in determines the base pool; the extra pools are
+ * the choice being made here.
+ */
+export const POOLS = [
+  { bit: 1, label: 'USD pairs', detail: 'USDC / USDT quoted', weight: '1.0x', vault: 'stable' },
+  { bit: 2, label: 'Blue-chip pairs', detail: 'ETH / BTC quoted', weight: '1.8x', vault: 'major' },
+  { bit: 4, label: 'Long-tail pairs', detail: 'Higher variance', weight: '3.5x', vault: 'any' },
 ] as const;

@@ -64,6 +64,11 @@ async function main() {
   await majorVault.configureAsset(wethAddress, ethers.parseUnits("3000", 18));
   await majorVault.configureAsset(wbtcAddress, ethers.parseUnits("60000", 18));
 
+  // MajorVault mints vUSD by depositing the USD underlying on the user's behalf,
+  // so it must hold USDC liquidity of its own or every ETH/BTC deposit reverts.
+  await (await usdc.mint(majorVaultAddress, ethers.parseUnits("10000000", 6))).wait();
+  console.log("MajorVault seeded with 10,000,000 USDC of minting liquidity");
+
   // 6. Deploy EarnVault (Nested ERC-4626 on vUSD + Rewards)
   const EarnVault = await ethers.getContractFactory("EarnVault");
   const earnVault = await EarnVault.deploy(vUsdAddress, molTokenAddress);

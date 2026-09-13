@@ -24,11 +24,12 @@ body {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: url('/background.png');
-  background-size: cover;
-  background-position: center bottom;
-  background-repeat: no-repeat;
-  opacity: 0.35;
+  /* Brand colours sampled from the original artwork: cream #F8E6B2 (68% of the
+     image) over brown #754E31 (27%). Rendered as a gradient rather than a
+     bitmap - no image request, and it scales to any viewport without banding. */
+  background:
+    radial-gradient(120% 85% at 50% 115%, #F8E6B2 0%, rgba(248, 230, 178, 0) 62%),
+    linear-gradient(180deg, #2A1B10 0%, #4A3120 48%, #754E31 100%);
 }
 
 /* Glassmorphic card styling matching the cream & brown tones */

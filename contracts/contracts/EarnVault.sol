@@ -12,7 +12,8 @@ import "./MolToken.sol";
  * @title EarnVault
  * @notice Layer 2 Boosted Yield Strategy implemented as a nested ERC-4626 Vault.
  * Underlying asset: vUSD (Layer 1 ERC-4626 yield token).
- * Shares: s1MOL (Staked 1mol Boosted Shares).
+ * Shares: stvUSD (share-appreciating, wstETH-style: balance is constant and
+ * each share redeems for more vUSD over time).
  * In addition to underlying vUSD yield, depositors earn continuous streaming 1MOL reward tokens.
  */
 contract EarnVault is ERC4626, Ownable, ReentrancyGuard {
@@ -45,7 +46,7 @@ contract EarnVault is ERC4626, Ownable, ReentrancyGuard {
 
     constructor(IERC20 _vUsdStakingToken, address _rewardToken)
         ERC4626(_vUsdStakingToken)
-        ERC20("1mol Staked Boosted USD", "s1MOL")
+        ERC20("1mol Staked Yield USD", "stvUSD")
         Ownable(msg.sender)
     {
         require(_rewardToken != address(0), "Invalid reward token");

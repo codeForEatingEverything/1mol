@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Send, Github, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ExternalLink, Github, PlayCircle, Send, ShieldCheck } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   return (
@@ -14,6 +14,16 @@ export const Footer: React.FC = () => {
 
         <div className="flex items-center gap-5">
           {/* Telegram link */}
+          <a
+            href="https://1mol.xyz/demo"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-lg border border-molCream-300/15 bg-molCream-500/10 px-3 py-1.5 text-xs font-medium text-molCream-200 transition-all hover:border-molCream-400 hover:bg-molCream-500/20 hover:text-white"
+          >
+            <PlayCircle className="h-3.5 w-3.5" />
+            Demo Video
+          </a>
+
           <a
             href="https://t.me/Scout0221"
             target="_blank"

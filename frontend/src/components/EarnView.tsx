@@ -23,6 +23,8 @@ export const EarnView: React.FC = () => {
 
   const [amount, setAmount] = useState('');
   const [mode, setMode] = useState<'stake' | 'unstake'>('stake');
+  // Earn sits on vUSD, so its base pool is the USD pair.
+  const basePool = 1;
   const [tierMask, setTierMask] = useState(1);
 
   const { data: vault, refetch: refetchVault } = useReadContracts({
@@ -208,7 +210,7 @@ export const EarnView: React.FC = () => {
         </div>
       </div>
 
-      <LoyaltyPanel selectedMask={tierMask} onSelect={setTierMask} />
+      <LoyaltyPanel selectedMask={tierMask} onSelect={setTierMask} basePool={basePool} />
     </div>
   );
 };

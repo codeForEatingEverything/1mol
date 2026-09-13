@@ -3,7 +3,7 @@
 import React from 'react';
 import { useAccount, useReadContract } from 'wagmi';
 import { formatUnits, type Address } from 'viem';
-import { contracts, loyaltyEngineAbi, TIERS } from '../config/contracts';
+import { contracts, loyaltyEngineAbi, POOLS } from '../config/contracts';
 import { StatRow } from './StatRow';
 
 const W = 10n ** 18n;
@@ -14,17 +14,21 @@ function mul(v: bigint | undefined): string {
 }
 
 /**
- * Shows what the depositor's loyalty curve currently is, and what raises it.
+ * Shows the depositor's loyalty curve and what raises it.
  *
- * Delegating across more pools than the base pool raises return sub-linearly
- * while raising ruin probability faster, so flat pro-rata rewards would
- * underpay whoever accepts that exposure. The curve is how that risk gets
- * priced: every figure here is read from LoyaltyEngine on chain.
+ * Aqua lets one balance back several pools at once without being split, so the
+ * same deposit can quote on more than one pair. Return does not scale with the
+ * number of pools, but exposure does - the balance is at risk in every pool it
+ * backs. Flat pro-rata rewards would pay the same either way, so the curve is
+ * what pays for the extra exposure. Every figure is read from LoyaltyEngine.
+ *
+ * `basePool` is fixed by the vault the depositor is in; the rest is their call.
  */
 export const LoyaltyPanel: React.FC<{
   selectedMask: number;
   onSelect: (mask: number) => void;
-}> = ({ selectedMask, onSelect }) => {
+  basePool: number;
+}> = ({ selectedMask, onSelect, basePool }) => {
   const { address, isConnected } = useAccount();
   const user = address as Address | undefined;
   const configured = contracts.loyaltyEngine !== '0x0000000000000000000000000000000000000000';
@@ -67,7 +71,7 @@ export const LoyaltyPanel: React.FC<{
   // is visible before committing capital to it.
   const projected = React.useMemo(() => {
     const weights: Record<number, number> = { 1: 1.0, 2: 1.8, 4: 3.5 };
-    const risk = TIERS.reduce((sum, t) => (selectedMask & t.bit ? sum + weights[t.bit] : sum), 0);
+    const risk = POOLS.reduce((sum, t) => (selectedMask & t.bit ? sum + weights[t.bit] : sum), 0);
     const tenureFactor = tenure ? Number(formatUnits(tenure, 18)) : 1;
     return risk * tenureFactor * (restaked ? 1.4 : 1);
   }, [selectedMask, tenure, restaked]);
@@ -76,24 +80,25 @@ export const LoyaltyPanel: React.FC<{
     <div className="panel p-5">
       <div className="mb-4">
         <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          Loyalty curve
+          Delegation &amp; loyalty
         </h3>
         <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          Rewards are split by the risk you accept, not by deposit size. Opting into more
-          pools than the base pool raises your curve, and so does restaking into Earn.
+          Your balance is not split. Each pool you allow it to back quotes against the whole
+          amount, so exposure compounds while return does not - the curve is what pays for
+          that. Restaking into Earn raises it further.
         </p>
       </div>
 
       <div className="space-y-2">
-        {TIERS.map((tier) => {
+        {POOLS.map((tier) => {
           const on = (selectedMask & tier.bit) !== 0;
-          const isBase = tier.bit === 1;
+          const isBase = tier.bit === basePool;
           return (
             <button
               key={tier.bit}
               type="button"
-              // The base pool is always part of the mandate; the optional tiers
-              // are what the depositor is actually choosing to take on.
+              // The vault's own pool is part of the mandate; the others are the
+              // additional delegations the depositor is choosing to allow.
               onClick={() => !isBase && onSelect(selectedMask ^ tier.bit)}
               disabled={isBase}
               className="panel-inset flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors"
@@ -139,9 +144,14 @@ export const LoyaltyPanel: React.FC<{
       <div className="divider my-4" />
 
       <StatRow
+        label="Pools backed"
+        value={String(POOLS.filter((p) => selectedMask & p.bit).length)}
+        hint="Each one quotes against your whole balance"
+      />
+      <StatRow
         label="Projected curve"
         value={`${projected.toFixed(2)}x`}
-        hint="Risk accepted x tenure x restaking"
+        hint="Pools backed x tenure x restaking"
       />
       <StatRow
         label="Your curve on chain"

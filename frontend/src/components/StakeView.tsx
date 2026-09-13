@@ -38,10 +38,17 @@ export const StakeView: React.FC = () => {
   const [asset, setAsset] = useState<Asset>('USDC');
   const [amount, setAmount] = useState('');
   const [mode, setMode] = useState<'deposit' | 'withdraw'>('deposit');
-  // Stable tier is always part of the mandate; the rest is the depositor's call.
+  const isStable = STABLES.includes(asset);
+
+  // The vault in use fixes the base pool: USD pairs for stables, blue-chip
+  // pairs for majors. Extra delegations are the depositor's choice on top.
+  const basePool = isStable ? 1 : 2;
   const [tierMask, setTierMask] = useState(1);
 
-  const isStable = STABLES.includes(asset);
+  // Switching vault moves the base pool, so keep it selected.
+  React.useEffect(() => {
+    setTierMask((m) => (m | basePool) & ~(basePool === 1 ? 2 : 1));
+  }, [basePool]);
 
   // ---- Vault state ----
   const { data: vault, refetch: refetchVault } = useReadContracts({
@@ -348,7 +355,7 @@ export const StakeView: React.FC = () => {
       </div>
 
       {/* Loyalty column */}
-      <LoyaltyPanel selectedMask={tierMask} onSelect={setTierMask} />
+      <LoyaltyPanel selectedMask={tierMask} onSelect={setTierMask} basePool={basePool} />
     </div>
   );
 };

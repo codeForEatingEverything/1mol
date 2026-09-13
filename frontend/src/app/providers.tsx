@@ -16,9 +16,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
+          // RainbowKit localises its own strings from the browser locale, which
+          // renders the connect button in Chinese on a zh-CN browser. The rest
+          // of the UI is English, so pin it.
+          locale="en-US"
           theme={darkTheme({
-            accentColor: '#dfb04e',
-            accentColorForeground: '#1a120b',
+            accentColor: '#f8e6b2',
+            accentColorForeground: '#2a1d12',
             borderRadius: 'medium',
             fontStack: 'system',
             overlayBlur: 'small',

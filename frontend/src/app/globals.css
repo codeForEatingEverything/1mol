@@ -4,63 +4,166 @@
 
 @import '@rainbow-me/rainbowkit/styles.css';
 
+/**
+ * Design tokens. A deliberately small palette: two brand colours sampled from
+ * the project artwork, one surface scale, and one accent. Flat fills and a
+ * single elevation - the visual weight belongs to the numbers, not the chrome.
+ */
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 15, 15, 17;
-  --background-end-rgb: 20, 18, 16;
+  /* Brand, sampled from the original artwork */
+  --cream: #f8e6b2;
+  --brown: #754e31;
+
+  /* Surfaces, darkest first */
+  --surface-0: #17110c;
+  --surface-1: #1f1811;
+  --surface-2: #2a2118;
+
+  --border: rgba(248, 230, 178, 0.12);
+  --border-strong: rgba(248, 230, 178, 0.26);
+
+  --text: #f7f1e4;
+  --text-muted: #b9ad98;
+  --text-dim: #8a8071;
+
+  --accent: #e9c97a;
+  --positive: #6fcf97;
+  --negative: #e07a5f;
+
+  --radius: 14px;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background-color: #0d0d0f;
+  color: var(--text);
+  background-color: var(--surface-0);
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
-/* Background canvas keeping user's original image in full resolution */
+/* Numbers are read side by side, so they need tabular figures. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/**
+ * Page background. The two brand colours as a gradient rather than a bitmap -
+ * no image request and no fixed resolution. Kept dim so panel text stays
+ * legible on top of it.
+ */
 .bg-canvas-container {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  /* Brand colours sampled from the original artwork: cream #F8E6B2 (68% of the
-     image) over brown #754E31 (27%). Rendered as a gradient rather than a
-     bitmap - no image request, and it scales to any viewport without banding. */
   background:
-    radial-gradient(120% 85% at 50% 115%, #F8E6B2 0%, rgba(248, 230, 178, 0) 62%),
-    linear-gradient(180deg, #2A1B10 0%, #4A3120 48%, #754E31 100%);
+    radial-gradient(110% 70% at 50% 118%, rgba(248, 230, 178, 0.5) 0%, rgba(248, 230, 178, 0) 60%),
+    linear-gradient(180deg, #17110c 0%, #2a1d12 55%, #4a3120 100%);
 }
 
-/* Glassmorphic card styling matching the cream & brown tones */
-.glass-panel {
-  background: rgba(18, 17, 21, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(242, 221, 170, 0.16);
-  box-shadow: 0 10px 30px 0 rgba(0, 0, 0, 0.45);
+/* One card treatment, one elevation. No blur stack, no glow. */
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.glass-panel-subtle {
-  background: rgba(28, 24, 26, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(242, 221, 170, 0.1);
+.panel-inset {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
+/* Segmented control, flat fills only. */
 .tab-active {
-  background: linear-gradient(135deg, #f2ddaa 0%, #dfb04e 100%);
-  color: #1a120b;
-  font-weight: 700;
-  box-shadow: 0 4px 15px rgba(223, 176, 78, 0.35);
+  background: var(--cream);
+  color: #2a1d12;
+  font-weight: 600;
 }
 
 .tab-inactive {
-  background: rgba(255, 255, 255, 0.05);
-  color: #d1c7b7;
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .tab-inactive:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f2ddaa;
+  color: var(--text);
+}
+
+/* Primary action: solid, not a gradient. */
+.btn-primary {
+  background: var(--cream);
+  color: #2a1d12;
+  font-weight: 600;
+  border-radius: 10px;
+  transition: opacity 120ms ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-primary:disabled {
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+/* A labelled figure, the page's main repeating unit. */
+.stat-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+}
+
+.stat-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.amount-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount-input::placeholder {
+  color: var(--text-dim);
+}
+
+.amount-input::-webkit-outer-spin-button,
+.amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.amount-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
 }

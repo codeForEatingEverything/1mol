@@ -39,7 +39,10 @@ const config: HardhatUserConfig = {
       // Public Sepolia endpoints price replacements aggressively; a fixed fee
       // above the floor keeps a multi-contract deploy from stalling midway
       // with "replacement transaction underpriced".
-      gasPrice: 30_000_000_000,
+      gasPrice: 2_000_000_000,
+      // The free endpoints drop connections mid-deploy; a longer timeout lets
+      // a slow response land instead of aborting the run.
+      timeout: 120_000,
     },
   },
   paths: {

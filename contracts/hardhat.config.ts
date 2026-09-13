@@ -36,6 +36,10 @@ const config: HardhatUserConfig = {
       url: process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com",
       chainId: 11155111,
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      // Public Sepolia endpoints price replacements aggressively; a fixed fee
+      // above the floor keeps a multi-contract deploy from stalling midway
+      // with "replacement transaction underpriced".
+      gasPrice: 30_000_000_000,
     },
   },
   paths: {

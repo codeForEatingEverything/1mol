@@ -69,6 +69,22 @@ async function main() {
   await (await usdc.mint(majorVaultAddress, ethers.parseUnits("10000000", 6))).wait();
   console.log("MajorVault seeded with 10,000,000 USDC of minting liquidity");
 
+  // 6a. Safety reserve: first-loss capital funded from realised profit.
+  const SafetyReserve = await ethers.getContractFactory("SafetyReserve");
+  const safetyReserve = await SafetyReserve.deploy(usdcAddress);
+  await safetyReserve.waitForDeployment();
+  const safetyReserveAddress = await safetyReserve.getAddress();
+  await (await safetyReserve.setVault(vUsdAddress)).wait();
+  await (await vUsd.setSafetyReserve(safetyReserveAddress)).wait();
+  console.log("SafetyReserve deployed to:", safetyReserveAddress);
+
+  // 6b. Loyalty engine: prices the risk a depositor opts into.
+  const LoyaltyEngine = await ethers.getContractFactory("LoyaltyEngine");
+  const loyaltyEngine = await LoyaltyEngine.deploy();
+  await loyaltyEngine.waitForDeployment();
+  const loyaltyEngineAddress = await loyaltyEngine.getAddress();
+  console.log("LoyaltyEngine deployed to:", loyaltyEngineAddress);
+
   // 6. Deploy EarnVault (Nested ERC-4626 on vUSD + Rewards)
   const EarnVault = await ethers.getContractFactory("EarnVault");
   const earnVault = await EarnVault.deploy(vUsdAddress, molTokenAddress);
@@ -79,11 +95,28 @@ async function main() {
   await molToken.setMinter(earnVaultAddress, true);
   await earnVault.notifyRewardAmount(ethers.parseUnits("100000", 18));
 
+  // The Earn vault is what reports restaking to the loyalty engine.
+  await (await loyaltyEngine.setVault(earnVaultAddress)).wait();
+
+  // 7. Aqua strategy manager. Aqua is deployed to the same address on every
+  // supported mainnet; on a local chain there is no registry, so this is wired
+  // for shape and left without allowlisted strategies.
+  const AQUA_REGISTRY = "0x1111113ccf1426a8e30e2bff5e005d929bf6a90a";
+  const AquaStrategyManager = await ethers.getContractFactory("AquaStrategyManager");
+  const aquaManager = await AquaStrategyManager.deploy(AQUA_REGISTRY, vUsdAddress);
+  await aquaManager.waitForDeployment();
+  const aquaManagerAddress = await aquaManager.getAddress();
+  console.log("AquaStrategyManager deployed to:", aquaManagerAddress);
+
   // Save deployments
   const deploymentInfo = {
     network: "hardhat_local",
     vUSD: vUsdAddress,
     MolToken: molTokenAddress,
+    SafetyReserve: safetyReserveAddress,
+    LoyaltyEngine: loyaltyEngineAddress,
+    AquaStrategyManager: aquaManagerAddress,
+    AquaRegistry: AQUA_REGISTRY,
     StableVault: stableVaultAddress,
     MajorVault: majorVaultAddress,
     EarnVault: earnVaultAddress,
@@ -109,6 +142,9 @@ async function main() {
     `NEXT_PUBLIC_MAJOR_VAULT_ADDRESS=${majorVaultAddress}`,
     `NEXT_PUBLIC_EARN_VAULT_ADDRESS=${earnVaultAddress}`,
     `NEXT_PUBLIC_MOL_TOKEN_ADDRESS=${molTokenAddress}`,
+    `NEXT_PUBLIC_SAFETY_RESERVE_ADDRESS=${safetyReserveAddress}`,
+    `NEXT_PUBLIC_LOYALTY_ENGINE_ADDRESS=${loyaltyEngineAddress}`,
+    `NEXT_PUBLIC_AQUA_MANAGER_ADDRESS=${aquaManagerAddress}`,
     `NEXT_PUBLIC_USDC_ADDRESS=${usdcAddress}`,
     `NEXT_PUBLIC_USDT_ADDRESS=${usdtAddress}`,
     `NEXT_PUBLIC_WETH_ADDRESS=${wethAddress}`,

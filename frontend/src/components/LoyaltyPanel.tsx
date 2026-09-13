@@ -79,8 +79,9 @@ export const LoyaltyPanel: React.FC<{
     const weights: Record<number, number> = { 1: 1.0, 2: 1.8, 4: 3.5 };
     const risk = POOLS.reduce((sum, p) => (selectedMask & p.bit ? sum + weights[p.bit] : sum), 0);
     const tenureFactor = tenure ? Number(formatUnits(tenure, 18)) : 1;
-    return risk * tenureFactor * (restaked ? 1.4 : 1);
-  }, [selectedMask, tenure, restaked]);
+    // Multi-pool delegation is the separate opt-in that lifts the curve.
+    return risk * tenureFactor * (multiPool ? 2 : 1) * (restaked ? 1.4 : 1);
+  }, [selectedMask, tenure, restaked, multiPool]);
 
   return (
     <div className="panel p-5">
@@ -89,21 +90,17 @@ export const LoyaltyPanel: React.FC<{
           Delegation &amp; loyalty
         </h3>
         <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          Pick the pools your deposit may quote on. Allowing more than one puts the same
-          balance to work in each of them at full size, which raises your curve.
+          Pick the kind of market your deposit quotes on.
         </p>
       </div>
 
       <div className="space-y-2">
         {POOLS.map((pool) => {
           const on = (selectedMask & pool.bit) !== 0;
-          // Selecting a second pool only means anything if multi-pool
-          // delegation is enabled, so picking one turns it on.
           const toggle = () => {
             const next = selectedMask ^ pool.bit;
-            if (next === 0) return; // at least one pool must stay selected
+            if (next === 0) return; // at least one pool type must stay selected
             onSelect(next);
-            if (POOLS.filter((p) => next & p.bit).length > 1) onMultiPoolChange(true);
           };
           return (
             <button
@@ -143,15 +140,7 @@ export const LoyaltyPanel: React.FC<{
 
       <button
         type="button"
-        onClick={() => {
-          const next = !multiPool;
-          onMultiPoolChange(next);
-          // Turning it off collapses the delegation back to a single pool.
-          if (!next && poolsBacked > 1) {
-            const first = POOLS.find((p) => selectedMask & p.bit);
-            if (first) onSelect(first.bit);
-          }
-        }}
+        onClick={() => onMultiPoolChange(!multiPool)}
         className="panel-inset mt-3 flex w-full cursor-pointer items-start gap-2.5 px-3 py-3 text-left"
         style={{ borderColor: multiPool ? 'var(--border-strong)' : 'var(--border)' }}
       >
@@ -170,8 +159,10 @@ export const LoyaltyPanel: React.FC<{
             Delegate this deposit to multiple pools
           </span>
           <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
-            The same balance quotes in every pool you pick, so it is exposed in all of them.
-            Opting in raises your loyalty curve.
+            A separate choice from the market type above - there are many pools within one
+            type. Aqua does not split the balance, so it quotes at full size in each pool it
+            backs. That is extra exposure on the same principal, and it raises your loyalty
+            curve.
           </span>
         </span>
       </button>
@@ -179,19 +170,18 @@ export const LoyaltyPanel: React.FC<{
       <div className="divider my-4" />
 
       <StatRow
-        label="Pools selected"
+        label="Market types"
         value={`${poolsBacked} of ${POOLS.length}`}
-        hint="Each quotes against your whole balance"
       />
       <StatRow
         label="Multi-pool delegation"
-        value={multiPool ? 'Enabled' : 'Single pool'}
+        value={multiPool ? '2.0x applied' : 'Off'}
         tone={multiPool ? 'positive' : 'muted'}
       />
       <StatRow
         label="Projected curve"
         value={`${projected.toFixed(2)}x`}
-        hint="Pools selected x tenure x restaking"
+        hint="Market type x multi-pool x tenure x restaking"
       />
       <StatRow
         label="Your curve on chain"

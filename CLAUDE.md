@@ -16,7 +16,11 @@ Hard requirements from the spec, easy to break by accident:
 - **Reuse over reinvention.** vUSD and EarnVault must stay on OpenZeppelin's audited
   ERC-4626 rather than hand-rolled share math.
 - **Footer links:** GitHub `codeForEatingEverything/1mol`, Telegram `@Scout0221`
-  (capital S only — it has been wrong before).
+  (capital S only — it has been wrong before), demo video `https://1mol.xyz/demo`
+  (`1mol.xyz` is the owner's domain; a YouTube link is to be added *alongside* the
+  demo link, not replacing it).
+- **No simulated UI.** Every number shown must come from chain. The views were once
+  `setTimeout` handlers over mock balances with hardcoded TVL; do not regress to that.
 - **Background artwork** (`frontend/public/background.png`) is the user's original
   high-resolution asset; do not downscale or replace it. Logo is `frontend/public/logo.png`.
 - **Very fine-grained git history.** One commit per small change or module, never a
@@ -33,6 +37,7 @@ npx hardhat test --grep "should accrue yield"      # single test by name
 npx hardhat node                                  # local chain on :8545
 npx hardhat run scripts/deploy.ts --network localhost   # writes deployments.json
 npx hardhat run scripts/e2e-flow.ts --network localhost # live end-to-end money flow
+npx hardhat run scripts/ui-paths.ts --network localhost # replays every frontend call path
 
 # Backend (run from backend/)
 npx tsc --noEmit                                  # typecheck (CI gates on this)
@@ -119,6 +124,24 @@ Next.js App Router, single route. `src/app/providers.tsx` wraps wagmi → react-
 RainbowKit; `src/app/page.tsx` holds the `stake | earn` tab state. Chains are hardhat,
 Sepolia, mainnet (`src/config/wagmi.ts`).
 
+Addresses and ABIs live in `src/config/contracts.ts`, reading `NEXT_PUBLIC_*` vars that
+`deploy.ts` writes into `frontend/.env.local`, with local-Hardhat defaults as fallback.
+
+`src/hooks/useVaultAction.ts` runs the approve-then-call sequence: it reads the current
+allowance and skips the approval when it already covers the amount, waits on both
+receipts, then triggers a refetch. Which calls need an allowance is not obvious:
+
+| Action | Allowance required |
+| --- | --- |
+| Stablecoin / major deposit | asset → gateway contract |
+| Stake vUSD into Earn | vUSD → EarnVault |
+| Redeem vUSD for underlying | none (user is caller *and* owner) |
+| Unstake s1MOL | none (user owns the shares) |
+| MajorVault withdraw | **vUSD → MajorVault** (it redeems on the user's behalf) |
+
+`scripts/ui-paths.ts` replays all seven of these against a live chain — run it after
+touching either view.
+
 ## Build gotchas already fixed — don't regress them
 
 - **`evmVersion: "cancun"`** in `hardhat.config.ts` is required: OZ v5 emits the `mcopy`
@@ -127,6 +150,11 @@ Sepolia, mainnet (`src/config/wagmi.ts`).
   the repo root, which jest's own resolver does not walk up to.
 - **`backend/tsconfig.json` includes the `DOM` lib** — viem's `ox` dependency ships TS
   sources referencing WebAuthn globals that `skipLibCheck` does not cover.
+- **`MajorVault` must hold USDC liquidity** to mint vUSD against, so `deploy.ts` seeds
+  it. Without that seeding every ETH/BTC deposit reverts.
+- **`frontend/tsconfig.json` targets ES2020** — viem/wagmi amounts are `bigint`, and es5
+  rejects BigInt literals outright. If `tsc` still reports TS2737 after a fix, delete the
+  stale `tsconfig.tsbuildinfo`.
 - **`@x402/evm` and `@x402/svm` are direct frontend deps** — wagmi's `baseAccount`
   connector (reached through RainbowKit's `getDefaultConfig`) imports them as unlisted
   optional peers, and webpack fails the production build without them.

@@ -6,7 +6,6 @@ import {
   StableVault,
   MajorVault,
   EarnVault,
-  MolToken,
   MockERC20,
   SafetyReserve,
 } from "../typechain-types";
@@ -19,7 +18,6 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
 
   let vUsd: vUSD;
   let safetyReserve: SafetyReserve;
-  let molToken: MolToken;
   let stableVault: StableVault;
   let majorVault: MajorVault;
   let earnVault: EarnVault;
@@ -49,10 +47,6 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
     await safetyReserve.setVault(await vUsd.getAddress());
     await vUsd.setSafetyReserve(await safetyReserve.getAddress());
 
-    // 3. Deploy MolToken (1MOL reward token)
-    const MolFactory = await ethers.getContractFactory("MolToken");
-    molToken = await MolFactory.deploy();
-
     // 4. Deploy StableVault (gateway for USDC/USDT)
     const StableVaultFactory = await ethers.getContractFactory("StableVault");
     stableVault = await StableVaultFactory.deploy(await vUsd.getAddress());
@@ -64,13 +58,9 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
     await majorVault.configureAsset(await weth.getAddress(), ethers.parseUnits("3000", 18));
     await majorVault.configureAsset(await wbtc.getAddress(), ethers.parseUnits("60000", 18));
 
-    // 6. Deploy EarnVault (nested ERC-4626 on vUSD + 1MOL reward distributor)
+    // 6. Deploy EarnVault (nested ERC-4626 over vUSD, minting stvUSD)
     const EarnVaultFactory = await ethers.getContractFactory("EarnVault");
-    earnVault = await EarnVaultFactory.deploy(await vUsd.getAddress(), await molToken.getAddress());
-    await molToken.setMinter(await earnVault.getAddress(), true);
-
-    // Fund EarnVault with 10,000 1MOL rewards over 30 days
-    await earnVault.notifyRewardAmount(ethers.parseUnits("10000", 18));
+    earnVault = await EarnVaultFactory.deploy(await vUsd.getAddress());
 
     // Mint test assets to Alice and Bob
     await usdc.mint(alice.address, ethers.parseUnits("10000", 6));
@@ -154,7 +144,7 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
     });
   });
 
-  describe("Layer 2 - EarnVault (Nested ERC-4626 + Streaming Rewards)", function () {
+  describe("Layer 2 - EarnVault (nested ERC-4626)", function () {
     beforeEach(async function () {
       // Alice deposits 1000 USDC -> gets vUSD shares
       await usdc.connect(alice).approve(await vUsd.getAddress(), ethers.parseUnits("1000", 6));
@@ -172,38 +162,16 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
       expect(await earnVault.totalAssets()).to.equal(aliceVusd);
     });
 
-    it("should accrue 1MOL streaming rewards over time", async function () {
+
+    it("redeems the whole position back to vUSD via exit", async function () {
       const aliceVusd = await vUsd.balanceOf(alice.address);
       await vUsd.connect(alice).approve(await earnVault.getAddress(), aliceVusd);
       await earnVault.connect(alice).deposit(aliceVusd, alice.address);
-
-      // Fast forward 1 day
-      await time.increase(86400);
-
-      const pendingReward = await earnVault.earned(alice.address);
-      expect(pendingReward).to.be.gt(0);
-
-      // Claim reward
-      await earnVault.connect(alice).getReward();
-      expect(await molToken.balanceOf(alice.address)).to.be.closeTo(
-        pendingReward,
-        ethers.parseUnits("1", 18)
-      );
-    });
-
-    it("should allow exit (redeeming s1MOL back to vUSD and claiming rewards)", async function () {
-      const aliceVusd = await vUsd.balanceOf(alice.address);
-      await vUsd.connect(alice).approve(await earnVault.getAddress(), aliceVusd);
-      await earnVault.connect(alice).deposit(aliceVusd, alice.address);
-
-      await time.increase(3600); // 1 hour
 
       await earnVault.connect(alice).exit();
 
-      // Alice receives back her vUSD principal
       expect(await earnVault.balanceOf(alice.address)).to.equal(0);
       expect(await vUsd.balanceOf(alice.address)).to.equal(aliceVusd);
-      expect(await molToken.balanceOf(alice.address)).to.be.gt(0);
     });
   });
 });

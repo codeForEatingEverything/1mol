@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "One More",
+  title: "1mol",
   description: "A decentralized single-page yield protocol built on 1inch shared liquidity principles. Stake stablecoins and major assets to mint vUSD and access Layer 2 boosted APY strategies.",
   icons: {
     icon: [

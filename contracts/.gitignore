@@ -1,0 +1,6 @@
+node_modules/
+artifacts/
+cache/
+typechain-types/
+# Generated per-deployment; addresses are environment specific.
+deployments.json

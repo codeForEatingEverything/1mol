@@ -1,32 +1,36 @@
 import type { Address } from 'viem';
 
 /**
- * Addresses come from NEXT_PUBLIC_* env vars, which `contracts/scripts/deploy.ts`
- * writes into frontend/.env.local. The defaults are the deterministic Hardhat
- * addresses for a fresh local deploy, so `hardhat node` + deploy + `next dev`
- * works with no manual wiring.
+ * Addresses for the active deployment, written into frontend/.env.local by
+ * `contracts/scripts/deploy.ts`.
+ *
+ * Each variable must be spelled out as a literal `process.env.NEXT_PUBLIC_*`
+ * expression: Next.js inlines these at build time by textual substitution, so
+ * a dynamic lookup like `process.env[key]` is always undefined in the browser
+ * and silently falls back to the local defaults.
  */
-const env = (key: string, fallback: string): Address =>
-  ((process.env[key] as Address | undefined) ?? (fallback as Address));
+const fallback = (
+  value: string | undefined,
+  local: string
+): Address => ((value && value.length > 0 ? value : local) as Address);
 
 /** True once a real deployment has been wired in for the active network. */
 export const isConfigured = (addr: Address) =>
   addr !== '0x0000000000000000000000000000000000000000';
 
 export const contracts = {
-  vUSD: env('NEXT_PUBLIC_VUSD_ADDRESS', '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9'),
-  stableVault: env('NEXT_PUBLIC_STABLE_VAULT_ADDRESS', '0x0165878A594ca255338adfa4d48449f69242Eb8F'),
-  majorVault: env('NEXT_PUBLIC_MAJOR_VAULT_ADDRESS', '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6'),
-  earnVault: env('NEXT_PUBLIC_EARN_VAULT_ADDRESS', '0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e'),
-  molToken: env('NEXT_PUBLIC_MOL_TOKEN_ADDRESS', '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707'),
-  loyaltyEngine: env('NEXT_PUBLIC_LOYALTY_ENGINE_ADDRESS', '0x0000000000000000000000000000000000000000'),
-  safetyReserve: env('NEXT_PUBLIC_SAFETY_RESERVE_ADDRESS', '0x0000000000000000000000000000000000000000'),
-  aquaStrategyManager: env('NEXT_PUBLIC_AQUA_MANAGER_ADDRESS', '0x0000000000000000000000000000000000000000'),
+  vUSD: fallback(process.env.NEXT_PUBLIC_VUSD_ADDRESS, '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9'),
+  stableVault: fallback(process.env.NEXT_PUBLIC_STABLE_VAULT_ADDRESS, '0x0165878A594ca255338adfa4d48449f69242Eb8F'),
+  majorVault: fallback(process.env.NEXT_PUBLIC_MAJOR_VAULT_ADDRESS, '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6'),
+  earnVault: fallback(process.env.NEXT_PUBLIC_EARN_VAULT_ADDRESS, '0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e'),
+  loyaltyEngine: fallback(process.env.NEXT_PUBLIC_LOYALTY_ENGINE_ADDRESS, '0x0000000000000000000000000000000000000000'),
+  safetyReserve: fallback(process.env.NEXT_PUBLIC_SAFETY_RESERVE_ADDRESS, '0x0000000000000000000000000000000000000000'),
+  aquaStrategyManager: fallback(process.env.NEXT_PUBLIC_AQUA_MANAGER_ADDRESS, '0x0000000000000000000000000000000000000000'),
   tokens: {
-    USDC: env('NEXT_PUBLIC_USDC_ADDRESS', '0x5FbDB2315678afecb367f032d93F642f64180aa3'),
-    USDT: env('NEXT_PUBLIC_USDT_ADDRESS', '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512'),
-    WETH: env('NEXT_PUBLIC_WETH_ADDRESS', '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0'),
-    WBTC: env('NEXT_PUBLIC_WBTC_ADDRESS', '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9'),
+    USDC: fallback(process.env.NEXT_PUBLIC_USDC_ADDRESS, '0x5FbDB2315678afecb367f032d93F642f64180aa3'),
+    USDT: fallback(process.env.NEXT_PUBLIC_USDT_ADDRESS, '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512'),
+    WETH: fallback(process.env.NEXT_PUBLIC_WETH_ADDRESS, '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0'),
+    WBTC: fallback(process.env.NEXT_PUBLIC_WBTC_ADDRESS, '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9'),
   },
 } as const;
 

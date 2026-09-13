@@ -15,5 +15,8 @@
     "hardhat": "^2.22.18",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@1inch/aqua-sdk": "^0.3.4"
   }
 }

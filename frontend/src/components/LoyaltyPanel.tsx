@@ -6,72 +6,78 @@ import { formatUnits, type Address } from 'viem';
 import { contracts, loyaltyEngineAbi, POOLS } from '../config/contracts';
 import { StatRow } from './StatRow';
 
-const W = 10n ** 18n;
+const ZERO = '0x0000000000000000000000000000000000000000';
 
 function mul(v: bigint | undefined): string {
   if (v === undefined || v === 0n) return '--';
-  return `${(Number(formatUnits(v, 18))).toFixed(2)}x`;
+  return `${Number(formatUnits(v, 18)).toFixed(2)}x`;
 }
 
 /**
- * Shows the depositor's loyalty curve and what raises it.
+ * Delegation controls and the resulting loyalty curve.
  *
- * Aqua lets one balance back several pools at once without being split, so the
- * same deposit can quote on more than one pair. Return does not scale with the
- * number of pools, but exposure does - the balance is at risk in every pool it
- * backs. Flat pro-rata rewards would pay the same either way, so the curve is
- * what pays for the extra exposure. Every figure is read from LoyaltyEngine.
- *
- * `basePool` is fixed by the vault the depositor is in; the rest is their call.
+ * Aqua does not split a delegated balance: allowing a deposit into more than
+ * one pool means the same balance quotes at full size in each of them. Return
+ * does not scale with the pool count, but exposure does, so the curve is what
+ * pays for opting into it.
  */
 export const LoyaltyPanel: React.FC<{
   selectedMask: number;
   onSelect: (mask: number) => void;
-  basePool: number;
-}> = ({ selectedMask, onSelect, basePool }) => {
+  multiPool: boolean;
+  onMultiPoolChange: (value: boolean) => void;
+}> = ({ selectedMask, onSelect, multiPool, onMultiPoolChange }) => {
   const { address, isConnected } = useAccount();
   const user = address as Address | undefined;
-  const configured = contracts.loyaltyEngine !== '0x0000000000000000000000000000000000000000';
+  const configured = contracts.loyaltyEngine !== ZERO;
+
+  // Wallet state and contract reads only exist on the client, so anything
+  // derived from them must not be rendered during SSR - a differing tree fails
+  // hydration and takes the whole page's interactivity down with it.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
+  const readEnabled = mounted && configured && Boolean(user);
 
   const { data: totalMultiplier } = useReadContract({
     address: contracts.loyaltyEngine,
     abi: loyaltyEngineAbi,
     functionName: 'totalMultiplier',
-    args: [user ?? '0x0'],
-    query: { enabled: configured && Boolean(user) },
+    args: [user ?? ZERO],
+    query: { enabled: readEnabled },
   });
 
   const { data: tenure } = useReadContract({
     address: contracts.loyaltyEngine,
     abi: loyaltyEngineAbi,
     functionName: 'tenureMultiplier',
-    args: [user ?? '0x0'],
-    query: { enabled: configured && Boolean(user) },
+    args: [user ?? ZERO],
+    query: { enabled: readEnabled },
   });
 
   const { data: emissionShare } = useReadContract({
     address: contracts.loyaltyEngine,
     abi: loyaltyEngineAbi,
     functionName: 'emissionShareBps',
-    args: [user ?? '0x0'],
-    query: { enabled: configured && Boolean(user) },
+    args: [user ?? ZERO],
+    query: { enabled: readEnabled },
   });
 
   const { data: position } = useReadContract({
     address: contracts.loyaltyEngine,
     abi: loyaltyEngineAbi,
     functionName: 'positions',
-    args: [user ?? '0x0'],
-    query: { enabled: configured && Boolean(user) },
+    args: [user ?? ZERO],
+    query: { enabled: readEnabled },
   });
 
-  const restaked = position?.[3] ?? false;
+  const restaked = mounted ? (position?.[3] ?? false) : false;
+  const poolsBacked = POOLS.filter((p) => selectedMask & p.bit).length;
 
-  // Projected curve for the tiers currently ticked, so the effect of a change
-  // is visible before committing capital to it.
+  // Curve for the current selection, shown before any capital is committed.
   const projected = React.useMemo(() => {
     const weights: Record<number, number> = { 1: 1.0, 2: 1.8, 4: 3.5 };
-    const risk = POOLS.reduce((sum, t) => (selectedMask & t.bit ? sum + weights[t.bit] : sum), 0);
+    const risk = POOLS.reduce((sum, p) => (selectedMask & p.bit ? sum + weights[p.bit] : sum), 0);
     const tenureFactor = tenure ? Number(formatUnits(tenure, 18)) : 1;
     return risk * tenureFactor * (restaked ? 1.4 : 1);
   }, [selectedMask, tenure, restaked]);
@@ -83,30 +89,29 @@ export const LoyaltyPanel: React.FC<{
           Delegation &amp; loyalty
         </h3>
         <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          Your balance is not split. Each pool you allow it to back quotes against the whole
-          amount, so exposure compounds while return does not - the curve is what pays for
-          that. Restaking into Earn raises it further.
+          Pick the pools your deposit may quote on. Allowing more than one puts the same
+          balance to work in each of them at full size, which raises your curve.
         </p>
       </div>
 
       <div className="space-y-2">
-        {POOLS.map((tier) => {
-          const on = (selectedMask & tier.bit) !== 0;
-          const isBase = tier.bit === basePool;
+        {POOLS.map((pool) => {
+          const on = (selectedMask & pool.bit) !== 0;
+          // Selecting a second pool only means anything if multi-pool
+          // delegation is enabled, so picking one turns it on.
+          const toggle = () => {
+            const next = selectedMask ^ pool.bit;
+            if (next === 0) return; // at least one pool must stay selected
+            onSelect(next);
+            if (POOLS.filter((p) => next & p.bit).length > 1) onMultiPoolChange(true);
+          };
           return (
             <button
-              key={tier.bit}
+              key={pool.bit}
               type="button"
-              // The vault's own pool is part of the mandate; the others are the
-              // additional delegations the depositor is choosing to allow.
-              onClick={() => !isBase && onSelect(selectedMask ^ tier.bit)}
-              disabled={isBase}
-              className="panel-inset flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors"
-              style={{
-                borderColor: on ? 'var(--border-strong)' : 'var(--border)',
-                opacity: isBase ? 0.75 : 1,
-                cursor: isBase ? 'default' : 'pointer',
-              }}
+              onClick={toggle}
+              className="panel-inset flex w-full cursor-pointer items-center justify-between px-3 py-2.5 text-left"
+              style={{ borderColor: on ? 'var(--border-strong)' : 'var(--border)' }}
             >
               <span className="flex items-center gap-2.5">
                 <span
@@ -121,46 +126,81 @@ export const LoyaltyPanel: React.FC<{
                 </span>
                 <span>
                   <span className="block text-xs font-semibold" style={{ color: 'var(--text)' }}>
-                    {tier.label}
-                    {isBase && (
-                      <span className="ml-1.5 font-normal" style={{ color: 'var(--text-dim)' }}>
-                        base
-                      </span>
-                    )}
+                    {pool.label}
                   </span>
                   <span className="block text-[11px]" style={{ color: 'var(--text-dim)' }}>
-                    {tier.detail}
+                    {pool.detail}
                   </span>
                 </span>
               </span>
               <span className="tnum text-xs font-semibold" style={{ color: 'var(--accent)' }}>
-                {tier.weight}
+                {pool.weight}
               </span>
             </button>
           );
         })}
       </div>
 
+      <button
+        type="button"
+        onClick={() => {
+          const next = !multiPool;
+          onMultiPoolChange(next);
+          // Turning it off collapses the delegation back to a single pool.
+          if (!next && poolsBacked > 1) {
+            const first = POOLS.find((p) => selectedMask & p.bit);
+            if (first) onSelect(first.bit);
+          }
+        }}
+        className="panel-inset mt-3 flex w-full cursor-pointer items-start gap-2.5 px-3 py-3 text-left"
+        style={{ borderColor: multiPool ? 'var(--border-strong)' : 'var(--border)' }}
+      >
+        <span
+          className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] text-[10px] font-bold"
+          style={{
+            background: multiPool ? 'var(--cream)' : 'transparent',
+            border: multiPool ? 'none' : '1px solid var(--border-strong)',
+            color: '#2a1d12',
+          }}
+        >
+          {multiPool ? '✓' : ''}
+        </span>
+        <span>
+          <span className="block text-xs font-semibold" style={{ color: 'var(--text)' }}>
+            Delegate this deposit to multiple pools
+          </span>
+          <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+            The same balance quotes in every pool you pick, so it is exposed in all of them.
+            Opting in raises your loyalty curve.
+          </span>
+        </span>
+      </button>
+
       <div className="divider my-4" />
 
       <StatRow
-        label="Pools backed"
-        value={String(POOLS.filter((p) => selectedMask & p.bit).length)}
-        hint="Each one quotes against your whole balance"
+        label="Pools selected"
+        value={`${poolsBacked} of ${POOLS.length}`}
+        hint="Each quotes against your whole balance"
+      />
+      <StatRow
+        label="Multi-pool delegation"
+        value={multiPool ? 'Enabled' : 'Single pool'}
+        tone={multiPool ? 'positive' : 'muted'}
       />
       <StatRow
         label="Projected curve"
         value={`${projected.toFixed(2)}x`}
-        hint="Pools backed x tenure x restaking"
+        hint="Pools selected x tenure x restaking"
       />
       <StatRow
         label="Your curve on chain"
-        value={isConnected ? mul(totalMultiplier as bigint | undefined) : '--'}
+        value={mounted && isConnected ? mul(totalMultiplier as bigint | undefined) : '--'}
       />
       <StatRow
         label="Tenure"
-        value={isConnected ? mul(tenure as bigint | undefined) : '--'}
-        hint="1.2x past 30 days, 1.5x past 90; resets if you raise your risk"
+        value={mounted && isConnected ? mul(tenure as bigint | undefined) : '--'}
+        hint="1.2x past 30 days, 1.5x past 90; resets if you add a pool"
       />
       <StatRow
         label="Restaked into Earn"
@@ -170,18 +210,12 @@ export const LoyaltyPanel: React.FC<{
       <StatRow
         label="Your share of rewards"
         value={
-          isConnected && emissionShare !== undefined
+          mounted && isConnected && emissionShare !== undefined
             ? `${(Number(emissionShare) / 100).toFixed(2)}%`
             : '--'
         }
-        hint="Risk-weighted, not pro-rata by deposit"
+        hint="Weighted by pools backed, not deposit size"
       />
-
-      {!configured && (
-        <p className="mt-3 text-[11px]" style={{ color: 'var(--text-dim)' }}>
-          LoyaltyEngine address not set for this network.
-        </p>
-      )}
     </div>
   );
 };

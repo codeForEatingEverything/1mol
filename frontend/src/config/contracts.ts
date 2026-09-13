@@ -128,18 +128,15 @@ export const aquaManagerAbi = [
 ] as const;
 
 /**
- * Pools a balance may be delegated to, matching LoyaltyEngine.Tier.
+ * Pool types a deposit can be delegated to. Both are optional and neither
+ * comes before the other - they are different kinds of market, not tiers.
  *
- * Aqua lets one balance back several pools at once without splitting it, which
- * is what makes it capital efficient. It also means a single balance is exposed
- * to every pool it backs, so ruin risk compounds with each additional pool
- * while return does not. The weight is what that exposure is paid for.
- *
- * Which vault a depositor is in determines the base pool; the extra pools are
- * the choice being made here.
+ * Aqua does not split a delegated balance, so a balance allowed into more than
+ * one pool quotes at full size in each of them. That is what the multi-pool
+ * option below prices: more concurrent exposure on the same principal.
  */
 export const POOLS = [
-  { bit: 1, label: 'USD pairs', detail: 'USDC / USDT quoted', weight: '1.0x', vault: 'stable' },
-  { bit: 2, label: 'Blue-chip pairs', detail: 'ETH / BTC quoted', weight: '1.8x', vault: 'major' },
-  { bit: 4, label: 'Long-tail pairs', detail: 'Higher variance', weight: '3.5x', vault: 'any' },
+  { bit: 1, label: 'Stablecoin pool', detail: 'USDC / USDT pairs', weight: '1.0x' },
+  { bit: 2, label: 'Major pool', detail: 'BTC / ETH pairs', weight: '1.8x' },
+  { bit: 4, label: 'Long-tail pool', detail: 'Higher variance pairs', weight: '3.5x' },
 ] as const;

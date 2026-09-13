@@ -12,10 +12,10 @@ const links = [
 export const Footer: React.FC = () => (
   <footer
     className="relative z-20 mt-auto"
-    style={{ borderTop: '1px solid var(--border)', background: 'rgba(23, 17, 12, 0.82)' }}
+    style={{ borderTop: '1px solid rgba(117, 78, 49, 0.22)' }}
   >
     <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-5 py-5 sm:flex-row">
-      <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+      <span className="text-xs" style={{ color: 'rgba(58, 38, 22, 0.72)' }}>
         1mol &middot; built on 1inch Aqua
       </span>
 
@@ -27,7 +27,7 @@ export const Footer: React.FC = () => (
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
-            style={{ color: 'var(--text-muted)' }}
+            style={{ color: 'rgba(58, 38, 22, 0.86)' }}
           >
             <Icon className="h-3.5 w-3.5" />
             {label}

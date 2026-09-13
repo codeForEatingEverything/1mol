@@ -5,58 +5,48 @@ import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { StakeView } from '../components/StakeView';
 import { EarnView } from '../components/EarnView';
-import { Sparkles, Layers, Zap } from 'lucide-react';
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'stake' | 'earn'>('stake');
+  const [tab, setTab] = useState<'stake' | 'earn'>('stake');
 
   return (
     <div className="relative flex min-h-screen flex-col">
-      {/* User's Original Background Image */}
       <div className="bg-canvas-container" />
-
-      {/* Top Navbar */}
       <Navbar />
 
-      {/* Main Container */}
-      <main className="relative z-10 flex-1 px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl space-y-6">
-          {/* Navigation Pill Tab Switcher: Stake vs Earn */}
-          <div className="flex justify-center">
-            <div className="inline-flex rounded-2xl border border-molCream-300/20 bg-molDark/80 p-1.5 shadow-2xl backdrop-blur-xl">
-              <button
-                onClick={() => setActiveTab('stake')}
-                className={`flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-bold transition-all duration-200 ${
-                  activeTab === 'stake' ? 'tab-active' : 'tab-inactive'
-                }`}
-              >
-                <Layers className="h-4 w-4" />
-                <span>Stake</span>
-                <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold">
-                  vUSD
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('earn')}
-                className={`flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-bold transition-all duration-200 ${
-                  activeTab === 'earn' ? 'tab-active' : 'tab-inactive'
-                }`}
-              >
-                <Zap className="h-4 w-4 text-amber-500" />
-                <span>Earn</span>
-              </button>
-            </div>
+      <main className="relative z-10 flex-1 px-5 py-10">
+        <div className="mx-auto max-w-5xl">
+          {/* Positioning stated once, plainly, then out of the way. */}
+          <div className="mb-8 max-w-2xl">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: 'var(--text)' }}>
+              The DeFi layer for 1inch Aqua
+            </h1>
+            <p className="mt-2.5 text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              Aqua keeps liquidity in your own account, which leaves a lone provider paying gas
+              to re-ship an immutable strategy and holding no receipt for the position. 1mol
+              stakes on behalf of everyone as one maker, issues vUSD for the position, and prices
+              the risk you choose to take on.
+            </p>
           </div>
 
-          {/* Tab Content Display */}
-          <div className="transition-all duration-300">
-            {activeTab === 'stake' ? <StakeView /> : <EarnView />}
+          <div className="mb-6 inline-flex rounded-[10px] p-1" style={{ background: 'var(--surface-2)' }}>
+            {(['stake', 'earn'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`rounded-lg px-5 py-2 text-sm transition-colors ${
+                  tab === t ? 'tab-active' : 'tab-inactive'
+                }`}
+              >
+                {t === 'stake' ? 'Stake' : 'Earn'}
+              </button>
+            ))}
           </div>
+
+          {tab === 'stake' ? <StakeView /> : <EarnView />}
         </div>
       </main>
 
-      {/* Bottom Footer */}
       <Footer />
     </div>
   );

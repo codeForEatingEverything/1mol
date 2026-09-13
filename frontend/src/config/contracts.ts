@@ -9,6 +9,10 @@ import type { Address } from 'viem';
 const env = (key: string, fallback: string): Address =>
   ((process.env[key] as Address | undefined) ?? (fallback as Address));
 
+/** True once a real deployment has been wired in for the active network. */
+export const isConfigured = (addr: Address) =>
+  addr !== '0x0000000000000000000000000000000000000000';
+
 export const contracts = {
   vUSD: env('NEXT_PUBLIC_VUSD_ADDRESS', '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9'),
   stableVault: env('NEXT_PUBLIC_STABLE_VAULT_ADDRESS', '0x0165878A594ca255338adfa4d48449f69242Eb8F'),

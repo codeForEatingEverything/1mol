@@ -3,10 +3,14 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "1mol | Decentralized Yield & Vault Protocol",
+  title: "One More",
   description: "A decentralized single-page yield protocol built on 1inch shared liquidity principles. Stake stablecoins and major assets to mint vUSD and access Layer 2 boosted APY strategies.",
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/icon.png", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
+    apple: "/icon.png",
   },
 };
 

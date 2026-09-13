@@ -59,9 +59,25 @@ body {
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  /* Split horizontally like the source artwork - brown above, cream below -
+     with a long blend through the middle so the seam reads as a horizon
+     rather than a hard edge, plus a warm glow sitting just beneath it. */
   background:
-    radial-gradient(110% 70% at 50% 118%, rgba(248, 230, 178, 0.5) 0%, rgba(248, 230, 178, 0) 60%),
-    linear-gradient(180deg, #17110c 0%, #2a1d12 55%, #4a3120 100%);
+    radial-gradient(
+      70% 44% at 50% 58%,
+      rgba(255, 246, 219, 0.55) 0%,
+      rgba(248, 230, 178, 0) 72%
+    ),
+    linear-gradient(
+      180deg,
+      #1c1208 0%,
+      #382516 24%,
+      #6b4529 44%,
+      #a97c4a 53%,
+      #ddc189 60%,
+      #f8e6b2 74%,
+      #fdf2cf 100%
+    );
 }
 
 /* One card treatment, one elevation. No blur stack, no glow. */
@@ -69,6 +85,9 @@ body {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  /* The lower half of the page is cream, so panels need a real shadow to sit
+     on it rather than appearing to float. */
+  box-shadow: 0 8px 28px rgba(28, 18, 8, 0.28);
 }
 
 .panel-inset {

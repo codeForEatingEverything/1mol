@@ -44,6 +44,7 @@ contract LoyaltyEngine is Ownable {
         uint256 principal;
         uint8 tierMask; // bitmask of opted-in tiers
         uint64 since; // timestamp tenure started
+        bool restaked; // true once the position is staked onward for stvUSD
     }
 
     mapping(Tier => TierConfig) public tiers;
@@ -57,11 +58,20 @@ contract LoyaltyEngine is Ownable {
     uint64 public tenure30d = 1.2e18;
     uint64 public tenure90d = 1.5e18;
 
+    /**
+     * @notice Extra multiplier for capital staked onward into Earn as stvUSD.
+     * @dev Restaking commits the position for longer and deepens the liquidity
+     *      the protocol can quote against, so it earns a higher curve than
+     *      vUSD held idle.
+     */
+    uint64 public restakeMultiplier = 1.4e18;
+
     address public vault;
 
     event TierConfigured(Tier tier, uint64 riskWeight, bool enabled);
     event TenureUpdated(uint64 tenure30d, uint64 tenure90d);
-    event DelegationUpdated(address indexed account, uint8 tierMask, uint256 loyaltyPower);
+    event RestakeMultiplierUpdated(uint64 multiplier);
+    event DelegationUpdated(address indexed account, uint8 tierMask, bool restaked, uint256 loyaltyPower);
     event VaultUpdated(address vault);
 
     error NotVault();
@@ -101,6 +111,12 @@ contract LoyaltyEngine is Ownable {
         emit TenureUpdated(m30, m90);
     }
 
+    function setRestakeMultiplier(uint64 multiplier) external onlyOwner {
+        require(multiplier >= WEIGHT_PRECISION && multiplier <= 5e18, "Out of range");
+        restakeMultiplier = multiplier;
+        emit RestakeMultiplierUpdated(multiplier);
+    }
+
     // ------------------------------------------------------------ accounting
 
     /**
@@ -109,7 +125,12 @@ contract LoyaltyEngine is Ownable {
      *      Raising the opted-in risk restarts tenure, so a depositor cannot bank
      *      a long-tenure multiplier at low risk and then flip to high risk.
      */
-    function updatePosition(address account, uint256 principal, uint8 tierMask) external onlyVault {
+    function updatePosition(
+        address account,
+        uint256 principal,
+        uint8 tierMask,
+        bool restaked
+    ) external onlyVault {
         if (principal > 0 && tierMask == 0) revert NoTierSelected();
 
         Position storage pos = positions[account];
@@ -132,15 +153,17 @@ contract LoyaltyEngine is Ownable {
 
         pos.principal = principal;
         pos.tierMask = tierMask;
+        pos.restaked = restaked;
 
         uint256 power = principal == 0
             ? 0
-            : (principal * riskSum * tenureMultiplier(account)) / (WEIGHT_PRECISION * WEIGHT_PRECISION);
+            : (principal * riskSum * tenureMultiplier(account) * (restaked ? restakeMultiplier : uint64(WEIGHT_PRECISION)))
+                / (WEIGHT_PRECISION * WEIGHT_PRECISION * WEIGHT_PRECISION);
 
         totalLoyaltyPower = totalLoyaltyPower - loyaltyPowerOf[account] + power;
         loyaltyPowerOf[account] = power;
 
-        emit DelegationUpdated(account, tierMask, power);
+        emit DelegationUpdated(account, tierMask, restaked, power);
     }
 
     // ----------------------------------------------------------------- views
@@ -161,6 +184,17 @@ contract LoyaltyEngine is Ownable {
         for (uint8 i; i < 3; ++i) {
             if (mask & (uint8(1) << i) != 0) riskSum += tiers[Tier(i)].riskWeight;
         }
+    }
+
+    /**
+     * @notice The depositor's total loyalty multiplier, scaled by WEIGHT_PRECISION.
+     * @dev What the UI should surface: risk accepted x tenure x restaking.
+     */
+    function totalMultiplier(address account) external view returns (uint256) {
+        uint256 risk = riskWeightOf(account);
+        if (risk == 0) return 0;
+        uint256 restake = positions[account].restaked ? restakeMultiplier : WEIGHT_PRECISION;
+        return (risk * tenureMultiplier(account) * restake) / (WEIGHT_PRECISION * WEIGHT_PRECISION);
     }
 
     /**

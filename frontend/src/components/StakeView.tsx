@@ -3,72 +3,93 @@
 import React, { useMemo, useState } from 'react';
 import { useAccount, useReadContract, useReadContracts } from 'wagmi';
 import { formatUnits, parseUnits, type Address } from 'viem';
-import { AlertTriangle, ArrowDownUp, CheckCircle2, Coins, Loader2, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import {
   contracts,
   erc20Abi,
   erc4626Abi,
   majorVaultAbi,
+  safetyReserveAbi,
   stableVaultAbi,
-  type MajorSymbol,
-  type StableSymbol,
+  aquaManagerAbi,
 } from '../config/contracts';
 import { useVaultAction } from '../hooks/useVaultAction';
+import { AmountField } from './AmountField';
+import { LoyaltyPanel } from './LoyaltyPanel';
+import { StatRow } from './StatRow';
 
-/** Formats a raw on-chain amount for display without losing small balances. */
-function display(value: bigint | undefined, decimals: number | undefined, digits = 4): string {
+type Asset = 'USDC' | 'USDT' | 'WETH' | 'WBTC';
+
+const STABLES: Asset[] = ['USDC', 'USDT'];
+const MAJORS: Asset[] = ['WETH', 'WBTC'];
+const ZERO = '0x0000000000000000000000000000000000000000';
+
+function fmt(value: bigint | undefined, decimals: number | undefined, digits = 4): string {
   if (value === undefined || decimals === undefined) return '--';
-  const formatted = formatUnits(value, decimals);
-  const n = Number(formatted);
-  if (Number.isNaN(n)) return formatted;
-  return n.toLocaleString(undefined, { maximumFractionDigits: digits });
+  const n = Number(formatUnits(value, decimals));
+  return Number.isNaN(n) ? '--' : n.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
 export const StakeView: React.FC = () => {
   const { isConnected, address } = useAccount();
-
-  const [stableToken, setStableToken] = useState<StableSymbol>('USDC');
-  const [stableAmount, setStableAmount] = useState('');
-  const [stableTab, setStableTab] = useState<'deposit' | 'withdraw'>('deposit');
-
-  const [majorToken, setMajorToken] = useState<MajorSymbol>('WETH');
-  const [majorAmount, setMajorAmount] = useState('');
-  const [majorTab, setMajorTab] = useState<'deposit' | 'withdraw'>('deposit');
-
   const user = address as Address | undefined;
   const enabled = Boolean(user);
 
-  // --- Layer 1 vault state, read straight from the ERC-4626 vault ---
-  const { data: vaultData, refetch: refetchVault } = useReadContracts({
+  const [asset, setAsset] = useState<Asset>('USDC');
+  const [amount, setAmount] = useState('');
+  const [mode, setMode] = useState<'deposit' | 'withdraw'>('deposit');
+  // Stable tier is always part of the mandate; the rest is the depositor's call.
+  const [tierMask, setTierMask] = useState(1);
+
+  const isStable = STABLES.includes(asset);
+
+  // ---- Vault state ----
+  const { data: vault, refetch: refetchVault } = useReadContracts({
     contracts: [
       { address: contracts.vUSD, abi: erc4626Abi, functionName: 'totalAssets' },
       { address: contracts.vUSD, abi: erc4626Abi, functionName: 'decimals' },
       { address: contracts.vUSD, abi: erc4626Abi, functionName: 'asset' },
+      { address: contracts.vUSD, abi: erc4626Abi, functionName: 'totalSupply' },
     ],
   });
 
-  const vUsdTotalAssets = vaultData?.[0]?.result as bigint | undefined;
-  const vUsdDecimals = vaultData?.[1]?.result as number | undefined;
-  const underlyingAsset = vaultData?.[2]?.result as Address | undefined;
+  const totalAssets = vault?.[0]?.result as bigint | undefined;
+  const vDec = vault?.[1]?.result as number | undefined;
+  const underlying = vault?.[2]?.result as Address | undefined;
 
-  const { data: underlyingDecimals } = useReadContract({
-    address: underlyingAsset,
+  const { data: uDec } = useReadContract({
+    address: underlying,
     abi: erc20Abi,
     functionName: 'decimals',
-    query: { enabled: Boolean(underlyingAsset) },
+    query: { enabled: Boolean(underlying) },
   });
 
-  // One whole share, used to show the live vUSD share price.
   const { data: sharePrice } = useReadContract({
     address: contracts.vUSD,
     abi: erc4626Abi,
     functionName: 'convertToAssets',
-    args: [vUsdDecimals !== undefined ? 10n ** BigInt(vUsdDecimals) : 0n],
-    query: { enabled: vUsdDecimals !== undefined },
+    args: [vDec !== undefined ? 10n ** BigInt(vDec) : 0n],
+    query: { enabled: vDec !== undefined },
   });
 
-  // --- User balances ---
-  const { data: userData, refetch: refetchUser } = useReadContracts({
+  // ---- Protocol health ----
+  const { data: reserve } = useReadContract({
+    address: contracts.safetyReserve,
+    abi: safetyReserveAbi,
+    functionName: 'coverageRatioBps',
+    args: [totalAssets ?? 0n],
+    query: { enabled: contracts.safetyReserve !== ZERO && totalAssets !== undefined },
+  });
+
+  const { data: activeStrategies } = useReadContract({
+    address: contracts.aquaStrategyManager,
+    abi: aquaManagerAbi,
+    functionName: 'activeStrategyCount',
+    query: { enabled: contracts.aquaStrategyManager !== ZERO },
+  });
+
+  // ---- Balances ----
+  const { data: balances, refetch: refetchUser } = useReadContracts({
     contracts: [
       { address: contracts.vUSD, abi: erc4626Abi, functionName: 'balanceOf', args: [user ?? '0x0'] },
       { address: contracts.tokens.USDC, abi: erc20Abi, functionName: 'balanceOf', args: [user ?? '0x0'] },
@@ -83,418 +104,251 @@ export const StakeView: React.FC = () => {
     query: { enabled },
   });
 
-  const vUsdBalance = userData?.[0]?.result as bigint | undefined;
+  const vUsdBalance = balances?.[0]?.result as bigint | undefined;
 
-  const tokenState = useMemo(
-    () => ({
-      USDC: { balance: userData?.[1]?.result as bigint | undefined, decimals: userData?.[2]?.result as number | undefined, address: contracts.tokens.USDC },
-      USDT: { balance: userData?.[3]?.result as bigint | undefined, decimals: userData?.[4]?.result as number | undefined, address: contracts.tokens.USDT },
-      WETH: { balance: userData?.[5]?.result as bigint | undefined, decimals: userData?.[6]?.result as number | undefined, address: contracts.tokens.WETH },
-      WBTC: { balance: userData?.[7]?.result as bigint | undefined, decimals: userData?.[8]?.result as number | undefined, address: contracts.tokens.WBTC },
-    }),
-    [userData]
-  );
+  const tokens = useMemo(() => {
+    const at = (i: number) => ({
+      balance: balances?.[i]?.result as bigint | undefined,
+      decimals: balances?.[i + 1]?.result as number | undefined,
+    });
+    return {
+      USDC: { ...at(1), address: contracts.tokens.USDC },
+      USDT: { ...at(3), address: contracts.tokens.USDT },
+      WETH: { ...at(5), address: contracts.tokens.WETH },
+      WBTC: { ...at(7), address: contracts.tokens.WBTC },
+    } as Record<Asset, { balance?: bigint; decimals?: number; address: Address }>;
+  }, [balances]);
 
-  // Oracle price the MajorVault will actually use for the selected asset.
   const { data: majorConfig } = useReadContract({
     address: contracts.majorVault,
     abi: majorVaultAbi,
     functionName: 'supportedAssets',
-    args: [tokenState[majorToken].address],
+    args: [tokens[asset].address],
+    query: { enabled: !isStable },
   });
-  const majorPriceUSD = majorConfig?.[2] as bigint | undefined;
+  const price = majorConfig?.[2] as bigint | undefined;
 
   const refetchAll = () => {
     void refetchVault();
     void refetchUser();
   };
+  const action = useVaultAction(refetchAll);
 
-  const stableAction = useVaultAction(refetchAll);
-  const majorAction = useVaultAction(refetchAll);
+  // ---- Submit ----
+  const submit = async () => {
+    const token = tokens[asset];
+    if (!user || !amount) return;
 
-  // --- Stablecoin vault submit ---
-  const onStableSubmit = async () => {
-    const token = tokenState[stableToken];
-    if (!user || !stableAmount) return;
-
-    if (stableTab === 'deposit') {
+    if (mode === 'deposit') {
       if (token.decimals === undefined) return;
-      const amount = parseUnits(stableAmount, token.decimals);
-      const ok = await stableAction.execute(
-        { address: contracts.stableVault, abi: stableVaultAbi, functionName: 'deposit', args: [token.address, amount] },
-        { token: token.address, spender: contracts.stableVault, amount },
-        `Deposited ${stableAmount} ${stableToken} and minted vUSD.`
+      const value = parseUnits(amount, token.decimals);
+      const gateway = isStable ? contracts.stableVault : contracts.majorVault;
+      const ok = await action.execute(
+        {
+          address: gateway,
+          abi: isStable ? stableVaultAbi : majorVaultAbi,
+          functionName: 'deposit',
+          args: [token.address, value],
+        },
+        { token: token.address, spender: gateway, amount: value },
+        `Staked ${amount} ${asset}. vUSD minted to your wallet.`
       );
-      if (ok) setStableAmount('');
-    } else {
-      if (vUsdDecimals === undefined) return;
-      const shares = parseUnits(stableAmount, vUsdDecimals);
-      // Redeem directly against the ERC-4626 vault: the user is both caller and
-      // owner, so no allowance is needed and it returns the underlying asset.
-      const ok = await stableAction.execute(
+      if (ok) setAmount('');
+      return;
+    }
+
+    if (vDec === undefined) return;
+    const shares = parseUnits(amount, vDec);
+
+    if (isStable) {
+      // Redeeming straight against the vault: caller is also owner, no allowance.
+      const ok = await action.execute(
         { address: contracts.vUSD, abi: erc4626Abi, functionName: 'redeem', args: [shares, user, user] },
         undefined,
-        `Redeemed ${stableAmount} vUSD for the underlying stablecoin.`
+        `Redeemed ${amount} vUSD.`
       );
-      if (ok) setStableAmount('');
-    }
-  };
-
-  // --- Major asset vault submit ---
-  const onMajorSubmit = async () => {
-    const token = tokenState[majorToken];
-    if (!user || !majorAmount) return;
-
-    if (majorTab === 'deposit') {
-      if (token.decimals === undefined) return;
-      const amount = parseUnits(majorAmount, token.decimals);
-      const ok = await majorAction.execute(
-        { address: contracts.majorVault, abi: majorVaultAbi, functionName: 'deposit', args: [token.address, amount] },
-        { token: token.address, spender: contracts.majorVault, amount },
-        `Deposited ${majorAmount} ${majorToken} and minted vUSD.`
-      );
-      if (ok) setMajorAmount('');
+      if (ok) setAmount('');
     } else {
-      if (vUsdDecimals === undefined) return;
-      const shares = parseUnits(majorAmount, vUsdDecimals);
       // MajorVault redeems on the user's behalf, so it needs a vUSD allowance.
-      const ok = await majorAction.execute(
-        { address: contracts.majorVault, abi: majorVaultAbi, functionName: 'withdraw', args: [token.address, shares] },
+      const ok = await action.execute(
+        { address: contracts.majorVault, abi: majorVaultAbi, functionName: 'withdraw', args: [tokens[asset].address, shares] },
         { token: contracts.vUSD, spender: contracts.majorVault, amount: shares },
-        `Redeemed ${majorAmount} vUSD for ${majorToken}.`
+        `Redeemed ${amount} vUSD for ${asset}.`
       );
-      if (ok) setMajorAmount('');
+      if (ok) setAmount('');
     }
   };
 
-  const expectedStableOut = () => {
-    if (!stableAmount) return '0.00';
-    return `${Number(stableAmount).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${
-      stableTab === 'deposit' ? 'vUSD' : 'underlying'
-    }`;
-  };
-
-  const expectedMajorOut = () => {
-    if (!majorAmount || !majorPriceUSD) return '0.00';
-    const price = Number(formatUnits(majorPriceUSD, 18));
-    if (majorTab === 'deposit') {
-      return `${(Number(majorAmount) * price).toLocaleString(undefined, { maximumFractionDigits: 2 })} vUSD`;
+  const receive = () => {
+    if (!amount || Number(amount) <= 0) return '0.00';
+    if (mode === 'deposit') {
+      if (isStable) return `${Number(amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} vUSD`;
+      if (!price) return '--';
+      return `${(Number(amount) * Number(formatUnits(price, 18))).toLocaleString(undefined, {
+        maximumFractionDigits: 2,
+      })} vUSD`;
     }
-    return `${(Number(majorAmount) / price).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${majorToken}`;
+    if (isStable) return `${Number(amount).toLocaleString(undefined, { maximumFractionDigits: 4 })} USDC`;
+    if (!price) return '--';
+    return `${(Number(amount) / Number(formatUnits(price, 18))).toLocaleString(undefined, {
+      maximumFractionDigits: 6,
+    })} ${asset}`;
   };
 
-  const statusBanner = (action: ReturnType<typeof useVaultAction>) => {
-    if (!action.message) return null;
-    const isError = action.status === 'error';
-    return (
-      <div
-        className={`flex items-start gap-2 rounded-lg p-2.5 text-xs border ${
-          isError
-            ? 'bg-red-500/10 text-red-300 border-red-500/20'
-            : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-        }`}
-      >
-        {isError ? (
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-        ) : (
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-        )}
-        <span className="break-all">{action.message}</span>
-      </div>
-    );
-  };
+  const inputBalance =
+    mode === 'deposit'
+      ? fmt(tokens[asset].balance, tokens[asset].decimals)
+      : fmt(vUsdBalance, vDec);
 
-  const submitLabel = (action: ReturnType<typeof useVaultAction>, fallback: string) => {
-    if (action.status === 'approving') return 'Approving token...';
-    if (action.status === 'pending') return 'Confirming on chain...';
-    return fallback;
+  const label = () => {
+    if (!isConnected) return 'Connect wallet';
+    if (action.status === 'approving') return `Approving ${mode === 'deposit' ? asset : 'vUSD'}...`;
+    if (action.status === 'pending') return 'Confirming...';
+    return mode === 'deposit' ? `Stake ${asset}` : 'Redeem vUSD';
   };
 
   return (
-    <div className="space-y-8">
-      {/* Layer 1 summary, all live values */}
-      <div className="glass-panel relative overflow-hidden rounded-2xl p-6">
-        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold tracking-tight text-molCream-100">
-                Layer 1: Single-Asset Yield Staking
-              </h2>
-              <span className="rounded-md bg-molCream-400/20 px-2 py-0.5 text-xs font-semibold text-molCream-300">
-                ERC-4626
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
+      {/* Primary action column */}
+      <div className="space-y-5">
+        <div className="panel p-6">
+          {/* One headline figure, the way a staking product should lead. */}
+          <div className="mb-6">
+            <div className="stat-label">vUSD share price</div>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="tnum text-4xl font-bold" style={{ color: 'var(--text)' }}>
+                {fmt(sharePrice as bigint | undefined, uDec as number | undefined, 6)}
+              </span>
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                underlying per vUSD
               </span>
             </div>
-            <p className="max-w-xl text-xs text-gray-300">
-              Deposit collateral to mint <strong>vUSD</strong>. Yield accrues into the vault, so each
-              share redeems for more of the underlying over time - your share count never changes.
+            <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              Your vUSD balance never changes. Market-making profit accrues into the vault, so
+              each share redeems for more over time - the same mechanism as wstETH.
             </p>
-            <div className="pt-1 text-[11px] text-gray-400">
-              Live vUSD share price:{' '}
-              <span className="font-mono font-semibold text-molCream-200">
-                {display(sharePrice as bigint | undefined, underlyingDecimals as number | undefined, 6)}
-              </span>{' '}
-              underlying per vUSD
-            </div>
           </div>
 
-          <div className="flex items-center gap-4 rounded-xl border border-molCream-400/20 bg-molBrown-900/60 p-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-tr from-molCream-400 to-amber-600 shadow-inner">
-              <Coins className="h-6 w-6 text-molBrown-900" />
-            </div>
-            <div>
-              <div className="text-[11px] font-medium text-gray-400">Your vUSD Balance</div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="font-mono text-2xl font-black text-molCream-100">
-                  {isConnected ? display(vUsdBalance, vUsdDecimals, 4) : '0.00'}
-                </span>
-                <span className="text-xs font-bold text-molCream-400">vUSD</span>
-              </div>
-              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-emerald-400">
-                <Sparkles className="h-2.5 w-2.5" />
-                Yield accrues in the share price, not the balance
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+          <div className="divider mb-5" />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* 1. Stablecoin Vault */}
-        <div className="glass-panel rounded-2xl p-6 transition-all hover:border-molCream-400/30">
-          <div className="flex items-center justify-between border-b border-molCream-300/10 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-500/20 font-bold text-emerald-300">
-                $
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-molCream-100">Stablecoin Vault</h3>
-                <p className="text-xs text-gray-400">USDC, USDT &middot; decimal-normalised</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-xs text-gray-400">Vault TVL</div>
-              <div className="font-mono text-lg font-black text-emerald-400">
-                {display(vUsdTotalAssets, underlyingDecimals as number | undefined, 2)}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex rounded-lg bg-black/40 p-1 my-4">
-            {(['deposit', 'withdraw'] as const).map((tab) => (
+          {/* Deposit / withdraw */}
+          <div className="mb-4 inline-flex rounded-[10px] p-1" style={{ background: 'var(--surface-2)' }}>
+            {(['deposit', 'withdraw'] as const).map((m) => (
               <button
-                key={tab}
-                onClick={() => setStableTab(tab)}
-                className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
-                  stableTab === tab ? 'tab-active' : 'tab-inactive'
+                key={m}
+                onClick={() => {
+                  setMode(m);
+                  setAmount('');
+                }}
+                className={`rounded-lg px-4 py-1.5 text-xs transition-colors ${
+                  mode === m ? 'tab-active' : 'tab-inactive'
                 }`}
               >
-                {tab === 'deposit' ? 'Deposit (Mint vUSD)' : 'Withdraw (Redeem)'}
+                {m === 'deposit' ? 'Stake' : 'Redeem'}
               </button>
             ))}
           </div>
 
-          <div className="space-y-3">
-            {stableTab === 'deposit' && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Select asset:</span>
-                {(['USDC', 'USDT'] as const).map((tok) => (
-                  <button
-                    key={tok}
-                    onClick={() => setStableToken(tok)}
-                    className={`rounded-md border px-3 py-1 text-xs font-medium transition-all ${
-                      stableToken === tok
-                        ? 'border-molCream-400 bg-molCream-500/20 text-molCream-100'
-                        : 'border-white/10 text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    {tok}
-                  </button>
-                ))}
-              </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {[...STABLES, ...MAJORS].map((a) => (
+              <button
+                key={a}
+                onClick={() => {
+                  setAsset(a);
+                  setAmount('');
+                }}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+                style={{
+                  background: asset === a ? 'var(--surface-2)' : 'transparent',
+                  border: `1px solid ${asset === a ? 'var(--border-strong)' : 'var(--border)'}`,
+                  color: asset === a ? 'var(--text)' : 'var(--text-muted)',
+                }}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+
+          <AmountField
+            label={mode === 'deposit' ? `Stake ${asset}` : 'Redeem vUSD'}
+            symbol={mode === 'deposit' ? asset : 'vUSD'}
+            value={amount}
+            onChange={setAmount}
+            balance={inputBalance}
+            disabled={action.isBusy}
+            onMax={() => {
+              const raw =
+                mode === 'deposit'
+                  ? { v: tokens[asset].balance, d: tokens[asset].decimals }
+                  : { v: vUsdBalance, d: vDec };
+              if (raw.v !== undefined && raw.d !== undefined) setAmount(formatUnits(raw.v, raw.d));
+            }}
+          />
+
+          <div className="mt-4 space-y-1">
+            <StatRow label="You receive" value={receive()} />
+            {!isStable && (
+              <StatRow
+                label={`${asset} price used`}
+                value={price ? `$${fmt(price, 18, 2)}` : '--'}
+                tone="muted"
+              />
             )}
-
-            <div className="rounded-xl border border-molCream-300/15 bg-black/40 p-3.5">
-              <div className="mb-1.5 flex items-center justify-between text-xs text-gray-400">
-                <span>{stableTab === 'deposit' ? `Deposit ${stableToken}` : 'Redeem vUSD'}</span>
-                <span>
-                  Balance:{' '}
-                  {isConnected
-                    ? stableTab === 'deposit'
-                      ? display(tokenState[stableToken].balance, tokenState[stableToken].decimals)
-                      : display(vUsdBalance, vUsdDecimals)
-                    : '0.00'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <input
-                  type="number"
-                  placeholder="0.0"
-                  value={stableAmount}
-                  onChange={(e) => setStableAmount(e.target.value)}
-                  className="w-full bg-transparent font-mono text-xl font-bold text-white outline-none placeholder-gray-600"
-                />
-                <button
-                  onClick={() => {
-                    const raw =
-                      stableTab === 'deposit'
-                        ? { v: tokenState[stableToken].balance, d: tokenState[stableToken].decimals }
-                        : { v: vUsdBalance, d: vUsdDecimals };
-                    if (raw.v !== undefined && raw.d !== undefined) setStableAmount(formatUnits(raw.v, raw.d));
-                  }}
-                  className="rounded bg-molCream-500/20 px-2 py-1 text-[10px] font-bold text-molCream-300 hover:bg-molCream-500/30"
-                >
-                  MAX
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border border-molCream-300/10 bg-molBrown-900/30 p-2.5 text-xs text-gray-300">
-              <span className="flex items-center gap-1">
-                <ArrowDownUp className="h-3.5 w-3.5 text-molCream-400" />
-                You will receive:
-              </span>
-              <span className="font-mono font-bold text-molCream-200">{expectedStableOut()}</span>
-            </div>
-
-            {statusBanner(stableAction)}
-
-            <button
-              onClick={onStableSubmit}
-              disabled={!isConnected || stableAction.isBusy || !stableAmount}
-              className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all ${
-                !isConnected || stableAction.isBusy || !stableAmount
-                  ? 'cursor-not-allowed bg-gray-700/50 text-gray-500'
-                  : 'bg-gradient-to-r from-molCream-300 via-molCream-500 to-molBrown-500 text-molBrown-900 shadow-goldGlow hover:opacity-95'
-              }`}
-            >
-              {stableAction.isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {!isConnected
-                ? 'Connect Wallet'
-                : submitLabel(
-                    stableAction,
-                    stableTab === 'deposit' ? `Deposit ${stableToken} & Mint vUSD` : 'Redeem vUSD'
-                  )}
-            </button>
           </div>
+
+          {action.message && (
+            <div
+              className="mt-4 flex items-start gap-2 rounded-[10px] p-3 text-xs"
+              style={{
+                background: action.status === 'error' ? 'rgba(224,122,95,0.1)' : 'rgba(111,207,151,0.1)',
+                border: `1px solid ${action.status === 'error' ? 'rgba(224,122,95,0.3)' : 'rgba(111,207,151,0.3)'}`,
+                color: action.status === 'error' ? 'var(--negative)' : 'var(--positive)',
+              }}
+            >
+              {action.status === 'error' ? (
+                <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="break-all">{action.message}</span>
+            </div>
+          )}
+
+          <button
+            onClick={submit}
+            disabled={!isConnected || action.isBusy || !amount}
+            className="btn-primary mt-5 flex w-full items-center justify-center gap-2 py-3 text-sm"
+          >
+            {action.isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {label()}
+          </button>
         </div>
 
-        {/* 2. Major Asset Vault */}
-        <div className="glass-panel rounded-2xl p-6 transition-all hover:border-molCream-400/30">
-          <div className="flex items-center justify-between border-b border-molCream-300/10 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-500/40 bg-indigo-500/20 font-bold text-indigo-300">
-                Ξ
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-molCream-100">Major Asset Vault</h3>
-                <p className="text-xs text-gray-400">ETH, BTC &middot; priced in USD</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-xs text-gray-400">Oracle price</div>
-              <div className="font-mono text-lg font-black text-amber-400">
-                {majorPriceUSD ? `$${display(majorPriceUSD, 18, 2)}` : '--'}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex rounded-lg bg-black/40 p-1 my-4">
-            {(['deposit', 'withdraw'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setMajorTab(tab)}
-                className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
-                  majorTab === tab ? 'tab-active' : 'tab-inactive'
-                }`}
-              >
-                {tab === 'deposit' ? 'Deposit (Mint vUSD)' : 'Withdraw (Redeem)'}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Select asset:</span>
-              {(['WETH', 'WBTC'] as const).map((tok) => (
-                <button
-                  key={tok}
-                  onClick={() => setMajorToken(tok)}
-                  className={`rounded-md border px-3 py-1 text-xs font-medium transition-all ${
-                    majorToken === tok
-                      ? 'border-molCream-400 bg-molCream-500/20 text-molCream-100'
-                      : 'border-white/10 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {tok}
-                </button>
-              ))}
-            </div>
-
-            <div className="rounded-xl border border-molCream-300/15 bg-black/40 p-3.5">
-              <div className="mb-1.5 flex items-center justify-between text-xs text-gray-400">
-                <span>{majorTab === 'deposit' ? `Deposit ${majorToken}` : 'Redeem vUSD for asset'}</span>
-                <span>
-                  Balance:{' '}
-                  {isConnected
-                    ? majorTab === 'deposit'
-                      ? display(tokenState[majorToken].balance, tokenState[majorToken].decimals)
-                      : display(vUsdBalance, vUsdDecimals)
-                    : '0.00'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <input
-                  type="number"
-                  placeholder="0.0"
-                  value={majorAmount}
-                  onChange={(e) => setMajorAmount(e.target.value)}
-                  className="w-full bg-transparent font-mono text-xl font-bold text-white outline-none placeholder-gray-600"
-                />
-                <button
-                  onClick={() => {
-                    const raw =
-                      majorTab === 'deposit'
-                        ? { v: tokenState[majorToken].balance, d: tokenState[majorToken].decimals }
-                        : { v: vUsdBalance, d: vUsdDecimals };
-                    if (raw.v !== undefined && raw.d !== undefined) setMajorAmount(formatUnits(raw.v, raw.d));
-                  }}
-                  className="rounded bg-molCream-500/20 px-2 py-1 text-[10px] font-bold text-molCream-300 hover:bg-molCream-500/30"
-                >
-                  MAX
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border border-molCream-300/10 bg-molBrown-900/30 p-2.5 text-xs text-gray-300">
-              <span className="flex items-center gap-1">
-                <ArrowDownUp className="h-3.5 w-3.5 text-molCream-400" />
-                You will receive:
-              </span>
-              <span className="font-mono font-bold text-molCream-200">{expectedMajorOut()}</span>
-            </div>
-
-            {statusBanner(majorAction)}
-
-            <button
-              onClick={onMajorSubmit}
-              disabled={!isConnected || majorAction.isBusy || !majorAmount}
-              className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-all ${
-                !isConnected || majorAction.isBusy || !majorAmount
-                  ? 'cursor-not-allowed bg-gray-700/50 text-gray-500'
-                  : 'bg-gradient-to-r from-molCream-300 via-molCream-500 to-molBrown-500 text-molBrown-900 shadow-goldGlow hover:opacity-95'
-              }`}
-            >
-              {majorAction.isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {!isConnected
-                ? 'Connect Wallet'
-                : submitLabel(
-                    majorAction,
-                    majorTab === 'deposit' ? `Deposit ${majorToken} & Mint vUSD` : `Redeem vUSD for ${majorToken}`
-                  )}
-            </button>
-          </div>
+        {/* Protocol figures, flat rows rather than decorated cards */}
+        <div className="panel p-6">
+          <h3 className="mb-3 text-sm font-semibold" style={{ color: 'var(--text)' }}>
+            Vault
+          </h3>
+          <StatRow
+            label="Total assets"
+            value={fmt(totalAssets, uDec as number | undefined, 2)}
+          />
+          <StatRow label="vUSD supply" value={fmt(vault?.[3]?.result as bigint | undefined, vDec, 2)} />
+          <StatRow
+            label="Reserve coverage"
+            value={reserve !== undefined ? `${(Number(reserve) / 100).toFixed(2)}%` : '--'}
+            hint="First-loss capital as a share of vault assets"
+          />
+          <StatRow
+            label="Live Aqua strategies"
+            value={activeStrategies !== undefined ? String(activeStrategies) : '--'}
+          />
+          <StatRow label="Your vUSD" value={isConnected ? fmt(vUsdBalance, vDec) : '--'} />
         </div>
       </div>
+
+      {/* Loyalty column */}
+      <LoyaltyPanel selectedMask={tierMask} onSelect={setTierMask} />
     </div>
   );
 };

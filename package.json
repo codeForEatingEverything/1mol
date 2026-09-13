@@ -1,0 +1,30 @@
+{
+  "name": "1mol-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "1mol: Decentralized Single-Page Yield Protocol based on 1inch shared liquidity principles",
+  "workspaces": [
+    "contracts",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "test:contracts": "npm --prefix contracts test",
+    "test:backend": "npm --prefix backend test",
+    "test": "npm run test:contracts && npm run test:backend",
+    "build:contracts": "npm --prefix contracts run build",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "npm run build:contracts && npm run build:backend && npm run build:frontend"
+  },
+  "keywords": [
+    "defi",
+    "1inch",
+    "yield",
+    "vault",
+    "web3",
+    "ethereum"
+  ],
+  "author": "codeForEatingEverything",
+  "license": "MIT"
+}

@@ -16,6 +16,17 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       chainId: 31337,
+      // Aqua is deployed to mainnets only - there is no testnet. Forking lets
+      // the suite exercise the real contract at its real address instead of a
+      // mock. Opt in with AQUA_FORK=1 so the default suite stays offline.
+      ...(process.env.AQUA_FORK === "1"
+        ? {
+            forking: {
+              url: process.env.MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com",
+              ...(process.env.FORK_BLOCK ? { blockNumber: Number(process.env.FORK_BLOCK) } : {}),
+            },
+          }
+        : {}),
     },
     localhost: {
       url: "http://127.0.0.1:8545",

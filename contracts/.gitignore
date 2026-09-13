@@ -4,3 +4,4 @@ cache/
 typechain-types/
 # Generated per-deployment; addresses are environment specific.
 deployments.json
+deployments.*.json

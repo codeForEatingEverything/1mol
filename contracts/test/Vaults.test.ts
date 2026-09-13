@@ -8,6 +8,7 @@ import {
   EarnVault,
   MolToken,
   MockERC20,
+  SafetyReserve,
 } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 
@@ -17,6 +18,7 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
   let bob: SignerWithAddress;
 
   let vUsd: vUSD;
+  let safetyReserve: SafetyReserve;
   let molToken: MolToken;
   let stableVault: StableVault;
   let majorVault: MajorVault;
@@ -40,6 +42,12 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
     // 2. Deploy vUSD as official OpenZeppelin ERC-4626 Vault
     const VUSDFactory = await ethers.getContractFactory("vUSD");
     vUsd = await VUSDFactory.deploy(await usdc.getAddress());
+
+    // 2b. Wire the safety reserve so the profit split runs in full (85/10/5).
+    const ReserveFactory = await ethers.getContractFactory("SafetyReserve");
+    safetyReserve = await ReserveFactory.deploy(await usdc.getAddress());
+    await safetyReserve.setVault(await vUsd.getAddress());
+    await vUsd.setSafetyReserve(await safetyReserve.getAddress());
 
     // 3. Deploy MolToken (1MOL reward token)
     const MolFactory = await ethers.getContractFactory("MolToken");
@@ -97,14 +105,16 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
       await usdc.connect(owner).approve(await vUsd.getAddress(), yieldAmount);
       await vUsd.connect(owner).accrueYield(yieldAmount);
 
-      // Total assets in the vault increases
-      expect(await vUsd.totalAssets()).to.equal(depositAmount + yieldAmount);
+      // Only the compounding share stays in the vault: 10% is retained as
+      // first-loss capital and 5% goes to treasury, so 85% lifts the price.
+      const compounded = (yieldAmount * 8_500n) / 10_000n;
+      expect(await vUsd.totalAssets()).to.equal(depositAmount + compounded);
 
       // Alice's share count remains the same, but her assets redeemable increased by 10%.
       // OZ v5 ERC-4626 adds a virtual share/asset offset (inflation-attack guard), so the
       // conversion rounds down in the vault's favour by at most 1 wei of the underlying.
       const assetsAfter = await vUsd.convertToAssets(sharesBefore);
-      expect(assetsAfter).to.be.closeTo(depositAmount + yieldAmount, 1n);
+      expect(assetsAfter).to.be.closeTo(depositAmount + compounded, 1n);
       expect(assetsAfter).to.be.gt(assetsBefore);
     });
 
@@ -155,7 +165,7 @@ describe("1mol Protocol - ERC-4626 Yield & Vault Test Suite", function () {
       const aliceVusd = await vUsd.balanceOf(alice.address);
       await vUsd.connect(alice).approve(await earnVault.getAddress(), aliceVusd);
 
-      // Alice deposits vUSD into EarnVault, receiving s1MOL shares
+      // Alice deposits vUSD into EarnVault, receiving stvUSD shares
       await earnVault.connect(alice).deposit(aliceVusd, alice.address);
 
       expect(await earnVault.balanceOf(alice.address)).to.be.gt(0);

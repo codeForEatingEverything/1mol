@@ -1,0 +1,74 @@
+name: 1mol CI Test Suite
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  contracts-test:
+    name: Contracts Tests (Hardhat & Solidity)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Contracts Dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Compile Contracts
+        run: npm run compile
+
+      - name: Run Contracts Test Suite
+        run: npm test
+
+  backend-test:
+    name: Backend Tests (Viem & Express)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Backend Dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck Backend
+        run: npx tsc --noEmit
+
+      - name: Run Backend Tests
+        run: npm test
+
+  frontend-build:
+    name: Frontend Build Verification (Next.js & RainbowKit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Frontend Dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build Frontend Application
+        run: npm run build

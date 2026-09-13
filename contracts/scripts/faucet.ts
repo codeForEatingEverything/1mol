@@ -8,9 +8,10 @@ import * as path from "path";
  * Defaults to the first Hardhat signer when RECIPIENT is unset.
  */
 async function main() {
-  const d = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "..", "deployments.json"), "utf8")
-  );
+  const network = await ethers.provider.getNetwork();
+  const perNetwork = path.resolve(__dirname, "..", `deployments.${network.chainId}.json`);
+  const fallback = path.resolve(__dirname, "..", "deployments.json");
+  const d = JSON.parse(fs.readFileSync(fs.existsSync(perNetwork) ? perNetwork : fallback, "utf8"));
   const [signer] = await ethers.getSigners();
   const to = process.env.RECIPIENT ?? signer.address;
 
@@ -27,8 +28,9 @@ async function main() {
     console.log(`minted ${amount} ${await erc20.symbol()} -> ${to}`);
   }
 
-  // Gas for a wallet that is not one of the prefunded Hardhat accounts.
-  if (process.env.RECIPIENT) {
+  // Gas for a wallet that is not one of the prefunded Hardhat accounts. Only on
+  // a local chain - on a public testnet the deployer's ETH is not for handing out.
+  if (process.env.RECIPIENT && network.chainId === 31337n) {
     await (await signer.sendTransaction({ to, value: ethers.parseEther("10") })).wait();
     console.log(`sent 10 ETH for gas -> ${to}`);
   }

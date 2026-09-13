@@ -96,6 +96,24 @@ async function main() {
     JSON.stringify(deploymentInfo, null, 2)
   );
   console.log("Deployment config written to contracts/deployments.json");
+
+  // Hand the same addresses to the frontend so the UI needs no manual wiring.
+  const frontendEnv = [
+    `NEXT_PUBLIC_VUSD_ADDRESS=${vUsdAddress}`,
+    `NEXT_PUBLIC_STABLE_VAULT_ADDRESS=${stableVaultAddress}`,
+    `NEXT_PUBLIC_MAJOR_VAULT_ADDRESS=${majorVaultAddress}`,
+    `NEXT_PUBLIC_EARN_VAULT_ADDRESS=${earnVaultAddress}`,
+    `NEXT_PUBLIC_MOL_TOKEN_ADDRESS=${molTokenAddress}`,
+    `NEXT_PUBLIC_USDC_ADDRESS=${usdcAddress}`,
+    `NEXT_PUBLIC_USDT_ADDRESS=${usdtAddress}`,
+    `NEXT_PUBLIC_WETH_ADDRESS=${wethAddress}`,
+    `NEXT_PUBLIC_WBTC_ADDRESS=${wbtcAddress}`,
+    "",
+  ].join("\n");
+
+  const frontendEnvPath = path.resolve(contractsDir, "..", "frontend", ".env.local");
+  fs.writeFileSync(frontendEnvPath, frontendEnv);
+  console.log("Frontend env written to frontend/.env.local");
 }
 
 async function MolFactoryDeploy(factory: any) {
